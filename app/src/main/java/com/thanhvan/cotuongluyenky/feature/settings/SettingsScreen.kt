@@ -236,6 +236,42 @@ fun SettingsScreen(
                 )
             }
 
+            // Live coaching & hints (Phase 2 — Sections 9.6 & 18.11)
+            LuyenKyCard(modifier = Modifier.fillMaxWidth()) {
+                Text("Trợ giúp & Đánh giá trực tiếp (Luyện tập)", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                Spacer(Modifier.height(6.dp))
+                SettingsToggleRow(
+                    title = "Bật gợi ý nhiều tầng",
+                    checked = settings.hintsEnabled,
+                    onCheckedChange = { viewModel.setHintsEnabled(it) }
+                )
+                SettingsToggleRow(
+                    title = "Đánh giá nhanh sau mỗi nước đi",
+                    checked = settings.liveEvaluationEnabled,
+                    onCheckedChange = { viewModel.setLiveEvaluationEnabled(it) }
+                )
+                SettingsToggleRow(
+                    title = "Hiển thị thanh lợi thế",
+                    checked = settings.showEvalBar,
+                    onCheckedChange = { viewModel.setShowEvalBar(it) }
+                )
+                SettingsToggleRow(
+                    title = "Chỉ cảnh báo sai lầm lớn (? / ??)",
+                    checked = settings.onlyWarnMajorBlunders,
+                    onCheckedChange = { viewModel.setOnlyWarnMajorBlunders(it) }
+                )
+                SettingsToggleRow(
+                    title = "Hiệu ứng nước tốt",
+                    checked = settings.showGoodMoveEffects,
+                    onCheckedChange = { viewModel.setShowGoodMoveEffects(it) }
+                )
+                SettingsToggleRow(
+                    title = "Rung nhẹ khi phát hiện sai lầm",
+                    checked = settings.vibrateOnBlunder,
+                    onCheckedChange = { viewModel.setVibrateOnBlunder(it) }
+                )
+            }
+
             // Engine resource mode
             LuyenKyCard(modifier = Modifier.fillMaxWidth()) {
                 Text("Tài nguyên máy cờ", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
@@ -268,11 +304,19 @@ fun SettingsScreen(
                     color = TextSecondary
                 )
                 Spacer(Modifier.height(10.dp))
-                OutlinedButton(
-                    onClick = { showClearDialog = true },
-                    shape = RoundedCornerShape(12.dp)
-                ) {
-                    Text("Xóa lịch sử ván đấu", color = ErrorRed)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        onClick = { viewModel.clearAnalysisCache() },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Xóa cache phân tích", color = TextPrimary)
+                    }
+                    OutlinedButton(
+                        onClick = { showClearDialog = true },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Xóa lịch sử", color = ErrorRed)
+                    }
                 }
             }
 

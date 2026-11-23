@@ -10,14 +10,19 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
@@ -29,6 +34,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.thanhvan.cotuongluyenky.core.model.AnalysisStatus
 import com.thanhvan.cotuongluyenky.core.model.GameResult
 import com.thanhvan.cotuongluyenky.core.model.Side
 import com.thanhvan.cotuongluyenky.core.ui.components.LuyenKyCard
@@ -40,10 +46,12 @@ import com.thanhvan.cotuongluyenky.ui.theme.ErrorRed
 import com.thanhvan.cotuongluyenky.ui.theme.InfoBlue
 import com.thanhvan.cotuongluyenky.ui.theme.TextPrimary
 import com.thanhvan.cotuongluyenky.ui.theme.TextSecondary
+import com.thanhvan.cotuongluyenky.ui.theme.WarningAmber
 
 @Composable
 fun ResultScreen(
     viewModel: ResultViewModel,
+    onAnalyzeGame: (Long) -> Unit,
     onPlayNewGame: () -> Unit,
     onBackToHome: () -> Unit
 ) {
@@ -102,6 +110,10 @@ fun ResultScreen(
             else -> ErrorRed
         }
 
+        val analysisSummary = state.analysisSummary
+        val isAnalyzed = analysisSummary?.status == AnalysisStatus.COMPLETED ||
+            analysisSummary?.status == AnalysisStatus.PARTIAL
+
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -110,9 +122,9 @@ fun ResultScreen(
                 .navigationBarsPadding()
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            Spacer(Modifier.height(8.dp))
+            Spacer(Modifier.height(4.dp))
             LuyenKyCard(
                 modifier = Modifier.fillMaxWidth(),
                 borderColor = headlineColor.copy(alpha = 0.65f)
@@ -152,33 +164,60 @@ fun ResultScreen(
                 HorizontalDivider(color = BorderSubtle, modifier = Modifier.padding(vertical = 8.dp))
                 DetailRow("Số lần đi lại", game.entity.undoCount.toString())
                 DetailRow("Số lần dùng gợi ý", game.entity.hintCount.toString())
+                DetailRow("Số lần xem quân nguy hiểm", game.entity.dangerCheckCount.toString())
             }
 
-            LuyenKyCard(modifier = Modifier.fillMaxWidth()) {
+            // Post-game analysis summary (Section 18.5: never show fabricated error counts before analysis!)
+            LuyenKyCard(
+                modifier = Modifier.fillMaxWidth(),
+                borderColor = AccentEmerald.copy(alpha = 0.5f)
+            ) {
                 Text(
-                    text = "Phân tích sau ván",
+                    text = "Phân tích ván đấu",
                     style = MaterialTheme.typography.titleMedium,
                     color = TextPrimary
                 )
                 Spacer(Modifier.height(6.dp))
-                Text(
-                    text = "Ván đấu đã được lưu đầy đủ lịch sử nước đi vào cơ sở dữ liệu cục bộ. Tính năng phân tích từng nước, biểu đồ lợi thế và tạo bài tập từ sai lầm sẽ mở khóa ở Phase 2 & 3.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = TextSecondary
-                )
+                if (isAnalyzed && analysisSummary != null) {
+                    DetailRow("Sai lầm nghiêm trọng (??)", analysisSummary.blunders.toString())
+                    DetailRow("Sai lầm (?)", analysisSummary.mistakes.toString())
+                    DetailRow("Chưa chính xác (?!)", analysisSummary.inaccuracies.toString())
+                    DetailRow("Số bước ngoặt phát hiện", analysisSummary.turningPointCount.toString())
+                } else {
+                    Text(
+                        text = "Ván đấu chưa được phân tích. Chạy phân tích để xem biểu đồ lợi thế, nhận xét từng nước, biến đề xuất và thử các nhánh khác.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                }
+                Spacer(Modifier.height(12.dp))
+                Button(
+                    onClick = { onAnalyzeGame(game.entity.id) },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(48.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentEmerald)
+                ) {
+                    Icon(Icons.Filled.Analytics, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = if (isAnalyzed) "Xem phân tích ván" else "Bắt đầu phân tích",
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Spacer(Modifier.weight(1f))
 
-            Button(
+            OutlinedButton(
                 onClick = onPlayNewGame,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(14.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = AccentEmerald)
+                    .height(48.dp),
+                shape = RoundedCornerShape(14.dp)
             ) {
-                Text("Chơi ván mới", fontWeight = FontWeight.Bold)
+                Text("Chơi ván mới", color = WarningAmber, fontWeight = FontWeight.SemiBold)
             }
 
             OutlinedButton(

@@ -23,8 +23,10 @@ data class GameWithMoveCount(
     val status: String,
     val undoCount: Int,
     val hintCount: Int,
+    val dangerCheckCount: Int,
     val analysisStatus: String,
-    val moveCount: Int
+    val moveCount: Int,
+    val blunderCount: Int
 )
 
 @Dao
@@ -45,8 +47,12 @@ interface GameDao {
         """
         SELECT g.id, g.createdAt, g.updatedAt, g.finishedAt, g.playerSide, g.engineName,
                g.engineLevel, g.mode, g.result, g.resultReason, g.status, g.undoCount,
-               g.hintCount, g.analysisStatus,
-               (SELECT COUNT(*) FROM moves m WHERE m.gameId = g.id) AS moveCount
+               g.hintCount, g.dangerCheckCount, g.analysisStatus,
+               (SELECT COUNT(*) FROM moves m WHERE m.gameId = g.id) AS moveCount,
+               (SELECT COUNT(*) FROM move_analysis ma
+                INNER JOIN moves mv ON mv.gameId = ma.gameId AND mv.plyIndex = ma.plyIndex
+                WHERE ma.gameId = g.id AND mv.side = g.playerSide AND ma.classification = 'BLUNDER'
+               ) AS blunderCount
         FROM games g
         WHERE g.status = 'IN_PROGRESS'
         ORDER BY g.updatedAt DESC
@@ -59,13 +65,29 @@ interface GameDao {
         """
         SELECT g.id, g.createdAt, g.updatedAt, g.finishedAt, g.playerSide, g.engineName,
                g.engineLevel, g.mode, g.result, g.resultReason, g.status, g.undoCount,
-               g.hintCount, g.analysisStatus,
-               (SELECT COUNT(*) FROM moves m WHERE m.gameId = g.id) AS moveCount
+               g.hintCount, g.dangerCheckCount, g.analysisStatus,
+               (SELECT COUNT(*) FROM moves m WHERE m.gameId = g.id) AS moveCount,
+               (SELECT COUNT(*) FROM move_analysis ma
+                INNER JOIN moves mv ON mv.gameId = ma.gameId AND mv.plyIndex = ma.plyIndex
+                WHERE ma.gameId = g.id AND mv.side = g.playerSide AND ma.classification = 'BLUNDER'
+               ) AS blunderCount
         FROM games g
         ORDER BY g.updatedAt DESC
         """
     )
     fun observeAllGames(): Flow<List<GameWithMoveCount>>
+
+    @Query("UPDATE games SET analysisStatus = :analysisStatus, updatedAt = :updatedAt WHERE id = :gameId")
+    suspend fun updateAnalysisStatus(gameId: Long, analysisStatus: String, updatedAt: Long)
+
+    @Query("UPDATE games SET analysisStatus = 'NOT_ANALYZED', updatedAt = :updatedAt")
+    suspend fun resetAllAnalysisStatuses(updatedAt: Long)
+
+    @Query("UPDATE games SET hintCount = hintCount + 1, updatedAt = :updatedAt WHERE id = :gameId")
+    suspend fun incrementHintCount(gameId: Long, updatedAt: Long)
+
+    @Query("UPDATE games SET dangerCheckCount = dangerCheckCount + 1, updatedAt = :updatedAt WHERE id = :gameId")
+    suspend fun incrementDangerCheckCount(gameId: Long, updatedAt: Long)
 
     @Query("DELETE FROM games WHERE id = :gameId")
     suspend fun deleteGameById(gameId: Long)

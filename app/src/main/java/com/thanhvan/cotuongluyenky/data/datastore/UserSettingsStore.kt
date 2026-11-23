@@ -37,7 +37,14 @@ data class UserSettings(
     val soundEnabled: Boolean = true,
     val soundVolume: Float = 0.85f,
     val hapticEnabled: Boolean = true,
-    val engineResourceMode: EngineResourceMode = EngineResourceMode.BALANCED
+    val engineResourceMode: EngineResourceMode = EngineResourceMode.BALANCED,
+    // Phase 2 settings (Sections 9.6, 18.11, 19.3-19.6)
+    val liveEvaluationEnabled: Boolean = true,
+    val showEvalBar: Boolean = true,
+    val onlyWarnMajorBlunders: Boolean = false,
+    val showGoodMoveEffects: Boolean = true,
+    val vibrateOnBlunder: Boolean = true,
+    val hintsEnabled: Boolean = true
 )
 
 class UserSettingsStore(context: Context) {
@@ -57,6 +64,12 @@ class UserSettingsStore(context: Context) {
         val SOUND_VOLUME = floatPreferencesKey("sound_volume")
         val HAPTIC_ENABLED = booleanPreferencesKey("haptic_enabled")
         val ENGINE_RESOURCE_MODE = stringPreferencesKey("engine_resource_mode")
+        val LIVE_EVALUATION_ENABLED = booleanPreferencesKey("live_evaluation_enabled")
+        val SHOW_EVAL_BAR = booleanPreferencesKey("show_eval_bar")
+        val ONLY_WARN_MAJOR_BLUNDERS = booleanPreferencesKey("only_warn_major_blunders")
+        val SHOW_GOOD_MOVE_EFFECTS = booleanPreferencesKey("show_good_move_effects")
+        val VIBRATE_ON_BLUNDER = booleanPreferencesKey("vibrate_on_blunder")
+        val HINTS_ENABLED = booleanPreferencesKey("hints_enabled")
     }
 
     val settingsFlow: Flow<UserSettings> = dataStore.data.map { prefs ->
@@ -73,7 +86,13 @@ class UserSettingsStore(context: Context) {
             soundEnabled = prefs[Keys.SOUND_ENABLED] ?: true,
             soundVolume = (prefs[Keys.SOUND_VOLUME] ?: 0.85f).coerceIn(0f, 1f),
             hapticEnabled = prefs[Keys.HAPTIC_ENABLED] ?: true,
-            engineResourceMode = enumOrDefault(prefs[Keys.ENGINE_RESOURCE_MODE], EngineResourceMode.BALANCED)
+            engineResourceMode = enumOrDefault(prefs[Keys.ENGINE_RESOURCE_MODE], EngineResourceMode.BALANCED),
+            liveEvaluationEnabled = prefs[Keys.LIVE_EVALUATION_ENABLED] ?: true,
+            showEvalBar = prefs[Keys.SHOW_EVAL_BAR] ?: true,
+            onlyWarnMajorBlunders = prefs[Keys.ONLY_WARN_MAJOR_BLUNDERS] ?: false,
+            showGoodMoveEffects = prefs[Keys.SHOW_GOOD_MOVE_EFFECTS] ?: true,
+            vibrateOnBlunder = prefs[Keys.VIBRATE_ON_BLUNDER] ?: true,
+            hintsEnabled = prefs[Keys.HINTS_ENABLED] ?: true
         )
     }
 
@@ -137,6 +156,30 @@ class UserSettingsStore(context: Context) {
 
     suspend fun setEngineResourceMode(mode: EngineResourceMode) {
         dataStore.edit { it[Keys.ENGINE_RESOURCE_MODE] = mode.name }
+    }
+
+    suspend fun setLiveEvaluationEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.LIVE_EVALUATION_ENABLED] = enabled }
+    }
+
+    suspend fun setShowEvalBar(enabled: Boolean) {
+        dataStore.edit { it[Keys.SHOW_EVAL_BAR] = enabled }
+    }
+
+    suspend fun setOnlyWarnMajorBlunders(enabled: Boolean) {
+        dataStore.edit { it[Keys.ONLY_WARN_MAJOR_BLUNDERS] = enabled }
+    }
+
+    suspend fun setShowGoodMoveEffects(enabled: Boolean) {
+        dataStore.edit { it[Keys.SHOW_GOOD_MOVE_EFFECTS] = enabled }
+    }
+
+    suspend fun setVibrateOnBlunder(enabled: Boolean) {
+        dataStore.edit { it[Keys.VIBRATE_ON_BLUNDER] = enabled }
+    }
+
+    suspend fun setHintsEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.HINTS_ENABLED] = enabled }
     }
 
     private inline fun <reified T : Enum<T>> enumOrDefault(raw: String?, default: T): T {

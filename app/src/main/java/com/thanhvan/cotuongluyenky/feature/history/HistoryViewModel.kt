@@ -3,6 +3,7 @@ package com.thanhvan.cotuongluyenky.feature.history
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
+import com.thanhvan.cotuongluyenky.core.model.AnalysisStatus
 import com.thanhvan.cotuongluyenky.core.model.GameResult
 import com.thanhvan.cotuongluyenky.core.model.GameStatus
 import com.thanhvan.cotuongluyenky.data.repository.GameRepository
@@ -19,7 +20,9 @@ enum class HistoryFilter(val label: String) {
     IN_PROGRESS("Đang dở"),
     WIN("Thắng"),
     LOSS("Thua"),
-    DRAW("Hòa")
+    DRAW("Hòa"),
+    HAS_BLUNDERS("Có sai lầm nghiêm trọng"),
+    NOT_ANALYZED("Chưa phân tích")
 }
 
 data class HistoryUiState(
@@ -43,6 +46,10 @@ class HistoryViewModel(
             HistoryFilter.WIN -> allGames.filter { it.status == GameStatus.FINISHED && it.playerWon }
             HistoryFilter.LOSS -> allGames.filter { it.status == GameStatus.FINISHED && it.playerLost }
             HistoryFilter.DRAW -> allGames.filter { it.status == GameStatus.FINISHED && it.result == GameResult.DRAW }
+            HistoryFilter.HAS_BLUNDERS -> allGames.filter { it.blunderCount > 0 }
+            HistoryFilter.NOT_ANALYZED -> allGames.filter {
+                it.status == GameStatus.FINISHED && it.analysisStatus == AnalysisStatus.NOT_ANALYZED
+            }
         }
         HistoryUiState(filter = filter, games = filtered)
     }.stateIn(

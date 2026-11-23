@@ -24,6 +24,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
@@ -37,6 +40,8 @@ import com.thanhvan.cotuongluyenky.core.model.Piece
 import com.thanhvan.cotuongluyenky.core.model.PieceDisplayStyle
 import com.thanhvan.cotuongluyenky.core.model.Side
 import com.thanhvan.cotuongluyenky.core.model.Square
+import com.thanhvan.cotuongluyenky.domain.analysis.MoveClassification
+import com.thanhvan.cotuongluyenky.domain.commentary.DangerLevel
 import com.thanhvan.cotuongluyenky.ui.theme.AccentEmerald
 import com.thanhvan.cotuongluyenky.ui.theme.ErrorRed
 import com.thanhvan.cotuongluyenky.ui.theme.InfoBlue
@@ -56,7 +61,11 @@ import com.thanhvan.cotuongluyenky.ui.theme.WoodGridLine
 import com.thanhvan.cotuongluyenky.ui.theme.WoodRiverText
 import com.thanhvan.cotuongluyenky.ui.theme.WoodSurfaceBottom
 import com.thanhvan.cotuongluyenky.ui.theme.WoodSurfaceTop
+import kotlin.math.atan2
+import kotlin.math.cos
+import kotlin.math.hypot
 import kotlin.math.roundToInt
+import kotlin.math.sin
 
 /**
  * Ephemeral visual animation metadata for the most recent move.
@@ -70,7 +79,26 @@ data class MoveAnimationEvent(
 )
 
 /**
- * Pure UI Xiangqi Board renderer (Section 17.4 & 21.2).
+ * Validated board arrow for hints and engine variations (Sections 10.2 & 17.5).
+ * Suggested moves use solid emerald; opponent replies use dashed red/coral for colorblind accessibility.
+ */
+data class BoardArrow(
+    val from: Square,
+    val to: Square,
+    val isOpponentReply: Boolean = false,
+    val stepNumber: Int? = null
+)
+
+/**
+ * Destination square feedback ring triggered after live move evaluation completes (Section 19.3 & 19.4).
+ */
+data class MoveFeedbackVisual(
+    val square: Square,
+    val classification: MoveClassification
+)
+
+/**
+ * Pure UI Xiangqi Board renderer (Section 17.4, 17.5 & 21.2).
  * Contains ZERO game-rule logic: renders strictly from [board] and state inputs,
  * and maps screen taps back to logical [Square] coordinates respecting [isFlipped].
  */
@@ -87,6 +115,10 @@ fun XiangqiBoard(
     showCoordinates: Boolean,
     reduceMotion: Boolean,
     animationEvent: MoveAnimationEvent?,
+    arrows: List<BoardArrow> = emptyList(),
+    hintPieceSquare: Square? = null,
+    moveFeedbackEffect: MoveFeedbackVisual? = null,
+    dangerPieces: Map<Square, DangerLevel> = emptyMap(),
     enabled: Boolean = true,
     onSquareTapped: (Square) -> Unit,
     modifier: Modifier = Modifier
@@ -183,7 +215,67 @@ fun XiangqiBoard(
                 }
             }
 
-            // 5. Fading captured piece (during animation only)
+            // 5. Tier 2 Hint Piece Highlight (highlights suggested piece without revealing destination)
+            if (hintPieceSquare != null) {
+                val center = metrics.squareCenter(hintPieceSquare, isFlipped)
+                drawCircle(
+                    color = InfoBlue.copy(alpha = 0.30f),
+                    radius = metrics.pieceRadius * 1.26f,
+                    center = center
+                )
+                drawCircle(
+                    color = InfoBlue,
+                    radius = metrics.pieceRadius * 1.14f,
+                    center = center,
+                    style = Stroke(width = metrics.pieceRadius * 0.14f)
+                )
+            }
+
+            // 6. Danger piece rings (Section 14.3: distinct styles per certainty level)
+            for ((sq, level) in dangerPieces) {
+                val center = metrics.squareCenter(sq, isFlipped)
+                when (level) {
+                    DangerLevel.UNDER_ATTACK -> {
+                        drawCircle(
+                            color = WarningAmber,
+                            radius = metrics.pieceRadius * 1.13f,
+                            center = center,
+                            style = Stroke(
+                                width = metrics.pieceRadius * 0.12f,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(10f, 6f), 0f)
+                            )
+                        )
+                    }
+                    DangerLevel.AT_RISK_OF_LOSS -> {
+                        drawCircle(
+                            color = WarningAmber.copy(alpha = 0.25f),
+                            radius = metrics.pieceRadius * 1.22f,
+                            center = center
+                        )
+                        drawCircle(
+                            color = Color(0xFFFF7043),
+                            radius = metrics.pieceRadius * 1.14f,
+                            center = center,
+                            style = Stroke(width = metrics.pieceRadius * 0.14f)
+                        )
+                    }
+                    DangerLevel.ENGINE_LOSS_LINE -> {
+                        drawCircle(
+                            color = ErrorRed.copy(alpha = 0.32f),
+                            radius = metrics.pieceRadius * 1.25f,
+                            center = center
+                        )
+                        drawCircle(
+                            color = ErrorRed,
+                            radius = metrics.pieceRadius * 1.14f,
+                            center = center,
+                            style = Stroke(width = metrics.pieceRadius * 0.16f)
+                        )
+                    }
+                }
+            }
+
+            // 7. Fading captured piece (during animation only)
             if (isAnimatingMove && animationEvent?.capturedPiece != null) {
                 val capCenter = metrics.squareCenter(animationEvent.move.to, isFlipped)
                 val alpha = (1f - progress).coerceIn(0f, 1f)
@@ -198,7 +290,7 @@ fun XiangqiBoard(
                 )
             }
 
-            // 6. All stationary pieces on the board
+            // 8. All stationary pieces on the board
             val animatedDest = if (isAnimatingMove) animationEvent?.move?.to else null
             for (idx in 0 until Square.BOARD_SQUARES) {
                 val piece = board.pieceAtIndex(idx) ?: continue
@@ -216,7 +308,7 @@ fun XiangqiBoard(
                 )
             }
 
-            // 7. Moving piece sliding smoothly from origin to destination
+            // 9. Moving piece sliding smoothly from origin to destination
             if (isAnimatingMove && animationEvent != null) {
                 val startOffset = metrics.squareCenter(animationEvent.move.from, isFlipped)
                 val endOffset = metrics.squareCenter(animationEvent.move.to, isFlipped)
@@ -233,7 +325,36 @@ fun XiangqiBoard(
                 )
             }
 
-            // 8. Legal move targets for the selected piece (drawn above pieces so capture rings stay visible)
+            // 10. Post-evaluation move feedback ring (Section 19.3 & 19.4)
+            if (moveFeedbackEffect != null) {
+                val center = metrics.squareCenter(moveFeedbackEffect.square, isFlipped)
+                val ringColor = when (moveFeedbackEffect.classification) {
+                    MoveClassification.GOOD -> AccentEmerald
+                    MoveClassification.INACCURACY -> WarningAmber
+                    MoveClassification.MISTAKE, MoveClassification.BLUNDER -> ErrorRed
+                    MoveClassification.ACCEPTABLE -> null
+                }
+                if (ringColor != null) {
+                    drawCircle(
+                        color = ringColor.copy(alpha = 0.24f),
+                        radius = metrics.pieceRadius * 1.22f,
+                        center = center
+                    )
+                    drawCircle(
+                        color = ringColor,
+                        radius = metrics.pieceRadius * 1.09f,
+                        center = center,
+                        style = Stroke(width = metrics.pieceRadius * 0.13f)
+                    )
+                }
+            }
+
+            // 11. Validated suggestion / variation arrows (Section 10.2 & 17.5)
+            for (arrow in arrows.take(4)) {
+                drawBoardArrow(metrics, arrow, isFlipped)
+            }
+
+            // 12. Legal move targets for the selected piece (drawn above pieces so capture rings stay visible)
             for (target in legalTargets) {
                 val center = metrics.squareCenter(target, isFlipped)
                 val isCapture = board.pieceAt(target) != null
@@ -313,6 +434,89 @@ private fun visualToLogical(visualCol: Int, visualRow: Int, isFlipped: Boolean):
     }
 }
 
+private fun DrawScope.drawBoardArrow(
+    metrics: BoardMetrics,
+    arrow: BoardArrow,
+    isFlipped: Boolean
+) {
+    val start = metrics.squareCenter(arrow.from, isFlipped)
+    val end = metrics.squareCenter(arrow.to, isFlipped)
+    val dx = end.x - start.x
+    val dy = end.y - start.y
+    val dist = hypot(dx, dy)
+    if (dist < 4f) return
+
+    val ux = dx / dist
+    val uy = dy / dist
+    val trimStart = metrics.pieceRadius * 0.42f
+    val headLen = metrics.pieceRadius * 0.68f
+    val headHalfW = metrics.pieceRadius * 0.42f
+    val shaftWidth = (metrics.pieceRadius * 0.24f).coerceIn(5f, 14f)
+
+    val lineStart = Offset(start.x + ux * trimStart, start.y + uy * trimStart)
+    val tip = Offset(end.x - ux * (metrics.pieceRadius * 0.16f), end.y - uy * (metrics.pieceRadius * 0.16f))
+    val shaftEnd = Offset(tip.x - ux * (headLen * 0.85f), tip.y - uy * (headLen * 0.85f))
+
+    val arrowColor = if (arrow.isOpponentReply) {
+        ErrorRed.copy(alpha = 0.88f)
+    } else {
+        AccentEmerald.copy(alpha = 0.90f)
+    }
+
+    val dashEffect = if (arrow.isOpponentReply) {
+        PathEffect.dashPathEffect(floatArrayOf(shaftWidth * 1.6f, shaftWidth * 0.9f), 0f)
+    } else {
+        null
+    }
+
+    // Shaft
+    drawLine(
+        color = arrowColor,
+        start = lineStart,
+        end = shaftEnd,
+        strokeWidth = shaftWidth,
+        cap = StrokeCap.Round,
+        pathEffect = dashEffect
+    )
+
+    // Arrowhead triangle
+    val angle = atan2(dy.toDouble(), dx.toDouble())
+    val perpX = -sin(angle).toFloat()
+    val perpY = cos(angle).toFloat()
+    val baseCenter = Offset(tip.x - ux * headLen, tip.y - uy * headLen)
+    val leftWing = Offset(baseCenter.x + perpX * headHalfW, baseCenter.y + perpY * headHalfW)
+    val rightWing = Offset(baseCenter.x - perpX * headHalfW, baseCenter.y - perpY * headHalfW)
+
+    val headPath = Path().apply {
+        moveTo(tip.x, tip.y)
+        lineTo(leftWing.x, leftWing.y)
+        lineTo(rightWing.x, rightWing.y)
+        close()
+    }
+    drawPath(path = headPath, color = arrowColor)
+
+    // Optional step badge in overview mode
+    if (arrow.stepNumber != null) {
+        val mid = Offset((lineStart.x + tip.x) / 2f, (lineStart.y + tip.y) / 2f)
+        val badgeRadius = metrics.pieceRadius * 0.34f
+        drawCircle(color = Color(0xFF121316), radius = badgeRadius, center = mid)
+        drawCircle(color = arrowColor, radius = badgeRadius, center = mid, style = Stroke(width = 2.5f))
+        val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.White.toArgb()
+            textAlign = Paint.Align.CENTER
+            textSize = badgeRadius * 1.25f
+            typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.BOLD)
+        }
+        val baseline = (textPaint.descent() + textPaint.ascent()) / 2f
+        drawContext.canvas.nativeCanvas.drawText(
+            arrow.stepNumber.toString(),
+            mid.x,
+            mid.y - baseline,
+            textPaint
+        )
+    }
+}
+
 private fun DrawScope.drawXiangqiGrid(
     metrics: BoardMetrics,
     lineColor: Color,
@@ -323,7 +527,6 @@ private fun DrawScope.drawXiangqiGrid(
     val strokeW = (metrics.cellW * 0.035f).coerceIn(1.5f, 3.2f)
     val outerGap = strokeW * 2.4f
 
-    // Double outer border
     drawRect(
         color = lineColor,
         topLeft = Offset(metrics.gridLeft - outerGap, metrics.gridTop - outerGap),
@@ -334,7 +537,6 @@ private fun DrawScope.drawXiangqiGrid(
         style = Stroke(width = strokeW * 1.4f)
     )
 
-    // 10 horizontal lines
     for (row in 0..9) {
         val y = metrics.gridTop + row * metrics.cellH
         drawLine(
@@ -345,7 +547,6 @@ private fun DrawScope.drawXiangqiGrid(
         )
     }
 
-    // 9 vertical lines (inner 7 files split across the river between rows 4 and 5)
     for (col in 0..8) {
         val x = metrics.gridLeft + col * metrics.cellW
         if (col == 0 || col == 8) {
@@ -371,13 +572,11 @@ private fun DrawScope.drawXiangqiGrid(
         }
     }
 
-    // Palace diagonals (top palace: rows 0..2, cols 3..5; bottom palace: rows 7..9, cols 3..5)
     drawLine(lineColor, metrics.intersection(3, 0), metrics.intersection(5, 2), strokeWidth = strokeW)
     drawLine(lineColor, metrics.intersection(5, 0), metrics.intersection(3, 2), strokeWidth = strokeW)
     drawLine(lineColor, metrics.intersection(3, 7), metrics.intersection(5, 9), strokeWidth = strokeW)
     drawLine(lineColor, metrics.intersection(5, 7), metrics.intersection(3, 9), strokeWidth = strokeW)
 
-    // Cannon and Soldier star-point corner marks
     val markerPoints = listOf(
         1 to 2, 7 to 2,
         1 to 7, 7 to 7,
@@ -389,14 +588,12 @@ private fun DrawScope.drawXiangqiGrid(
     for ((col, row) in markerPoints) {
         val c = metrics.intersection(col, row)
         if (col > 0) {
-            // Left corners
             drawLine(lineColor, Offset(c.x - gap - arm, c.y - gap), Offset(c.x - gap, c.y - gap), strokeW)
             drawLine(lineColor, Offset(c.x - gap, c.y - gap - arm), Offset(c.x - gap, c.y - gap), strokeW)
             drawLine(lineColor, Offset(c.x - gap - arm, c.y + gap), Offset(c.x - gap, c.y + gap), strokeW)
             drawLine(lineColor, Offset(c.x - gap, c.y + gap + arm), Offset(c.x - gap, c.y + gap), strokeW)
         }
         if (col < 8) {
-            // Right corners
             drawLine(lineColor, Offset(c.x + gap, c.y - gap), Offset(c.x + gap + arm, c.y - gap), strokeW)
             drawLine(lineColor, Offset(c.x + gap, c.y - gap - arm), Offset(c.x + gap, c.y - gap), strokeW)
             drawLine(lineColor, Offset(c.x + gap, c.y + gap), Offset(c.x + gap + arm, c.y + gap), strokeW)
@@ -404,7 +601,6 @@ private fun DrawScope.drawXiangqiGrid(
         }
     }
 
-    // River labels ("SỞ HÀ" and "HÁN GIỚI") strictly centered in the river band (Section 17.4)
     val riverCenterY = metrics.gridTop + 4.5f * metrics.cellH
     val riverPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = riverTextColor.copy(alpha = 0.82f).toArgb()
@@ -429,7 +625,6 @@ private fun DrawScope.drawXiangqiGrid(
         riverPaint
     )
 
-    // Optional file coordinates (1..9 from each side's perspective)
     if (showCoordinates) {
         val coordPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = riverTextColor.copy(alpha = 0.78f).toArgb()
@@ -499,14 +694,12 @@ private fun DrawScope.drawPieceDisc(
         else -> PieceDiscMinimalBlack
     }
 
-    // Soft drop shadow
     drawCircle(
         color = PieceDiscShadow.copy(alpha = PieceDiscShadow.alpha * alpha),
         radius = radius,
         center = Offset(center.x + radius * 0.06f, center.y + radius * 0.09f)
     )
 
-    // Selection glow ring
     if (isSelected) {
         drawCircle(
             color = AccentEmerald.copy(alpha = 0.32f),
@@ -515,14 +708,12 @@ private fun DrawScope.drawPieceDisc(
         )
     }
 
-    // Base disc
     drawCircle(
         color = discColor.copy(alpha = alpha),
         radius = radius,
         center = center
     )
 
-    // Outer rim
     drawCircle(
         color = (if (isSelected) AccentEmerald else inkColor.copy(alpha = 0.72f)).copy(alpha = alpha),
         radius = radius,
@@ -530,7 +721,6 @@ private fun DrawScope.drawPieceDisc(
         style = Stroke(width = radius * (if (isSelected) 0.14f else 0.08f))
     )
 
-    // Traditional inner ring
     drawCircle(
         color = inkColor.copy(alpha = 0.55f * alpha),
         radius = radius * 0.82f,
@@ -538,7 +728,6 @@ private fun DrawScope.drawPieceDisc(
         style = Stroke(width = radius * 0.045f)
     )
 
-    // Piece label (Hanzi or Vietnamese)
     val label = piece.type.boardLabel(piece.side, displayStyle)
     val textScale = when {
         displayStyle == PieceDisplayStyle.HANZI -> 1.06f

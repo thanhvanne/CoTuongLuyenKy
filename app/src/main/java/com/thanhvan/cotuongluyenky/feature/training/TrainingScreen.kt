@@ -50,8 +50,8 @@ fun TrainingScreen(
 
         TrainingModulePreviewCard(
             title = "Gợi ý nhiều tầng & Phân tích cuối ván",
-            phaseBadge = "Phase 2",
-            description = "Biểu đồ lợi thế, nhận xét có căn cứ từ dữ kiện bàn cờ, xem biến engine hợp lệ và đánh thử nhánh phân tích."
+            phaseBadge = "Đã mở (Phase 2)",
+            description = "Đã sẵn sàng! Bạn có thể mở Gợi ý 4 tầng ngay trong màn Bàn cờ hoặc vào tab Lịch sử để xem biểu đồ lợi thế, nhận xét có căn cứ và đánh thử biến phân tích."
         )
 
         TrainingModulePreviewCard(

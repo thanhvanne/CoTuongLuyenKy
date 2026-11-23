@@ -3,7 +3,6 @@ package com.thanhvan.cotuongluyenky.navigation
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Home
@@ -18,6 +17,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -27,6 +27,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.thanhvan.cotuongluyenky.AppContainer
+import com.thanhvan.cotuongluyenky.feature.analysis.AnalysisScreen
+import com.thanhvan.cotuongluyenky.feature.analysis.AnalysisViewModel
 import com.thanhvan.cotuongluyenky.feature.game.GameScreen
 import com.thanhvan.cotuongluyenky.feature.game.GameViewModel
 import com.thanhvan.cotuongluyenky.feature.history.HistoryScreen
@@ -52,10 +54,12 @@ object Routes {
     const val SETUP = "setup"
     const val GAME = "game/{gameId}"
     const val RESULT = "result/{gameId}"
+    const val ANALYSIS = "analysis/{gameId}"
     const val SETTINGS = "settings"
 
     fun game(gameId: Long) = "game/$gameId"
     fun result(gameId: Long) = "result/$gameId"
+    fun analysis(gameId: Long) = "analysis/$gameId"
 }
 
 private enum class BottomTab(
@@ -139,7 +143,8 @@ fun CoTuongAppRoot(container: AppContainer) {
                 HistoryScreen(
                     viewModel = vm,
                     onResumeGame = { id -> navController.navigate(Routes.game(id)) },
-                    onOpenResult = { id -> navController.navigate(Routes.result(id)) }
+                    onOpenResult = { id -> navController.navigate(Routes.result(id)) },
+                    onOpenAnalysis = { id -> navController.navigate(Routes.analysis(id)) }
                 )
             }
 
@@ -177,6 +182,7 @@ fun CoTuongAppRoot(container: AppContainer) {
                         gameId = gameId,
                         gameRepository = container.gameRepository,
                         engineManager = container.engineManager,
+                        analysisService = container.analysisService,
                         settingsStore = container.settingsStore,
                         soundEffectManager = container.soundEffectManager,
                         hapticFeedbackManager = container.hapticFeedbackManager
@@ -187,6 +193,11 @@ fun CoTuongAppRoot(container: AppContainer) {
                     onNavigateBack = { navController.popBackStack() },
                     onNavigateToResult = { id ->
                         navController.navigate(Routes.result(id)) {
+                            popUpTo(Routes.HOME) { inclusive = false }
+                        }
+                    },
+                    onNavigateToAnalysis = { id ->
+                        navController.navigate(Routes.analysis(id)) {
                             popUpTo(Routes.HOME) { inclusive = false }
                         }
                     },
@@ -203,11 +214,13 @@ fun CoTuongAppRoot(container: AppContainer) {
                     key = "result_$gameId",
                     factory = ResultViewModel.Factory(
                         gameId = gameId,
-                        gameRepository = container.gameRepository
+                        gameRepository = container.gameRepository,
+                        analysisService = container.analysisService
                     )
                 )
                 ResultScreen(
                     viewModel = vm,
+                    onAnalyzeGame = { id -> navController.navigate(Routes.analysis(id)) },
                     onPlayNewGame = {
                         navController.navigate(Routes.SETUP) {
                             popUpTo(Routes.HOME) { inclusive = false }
@@ -216,6 +229,27 @@ fun CoTuongAppRoot(container: AppContainer) {
                     onBackToHome = {
                         navController.popBackStack(Routes.HOME, inclusive = false)
                     }
+                )
+            }
+
+            composable(
+                route = Routes.ANALYSIS,
+                arguments = listOf(navArgument("gameId") { type = NavType.LongType })
+            ) { entry ->
+                val gameId = entry.arguments?.getLong("gameId") ?: 0L
+                val vm: AnalysisViewModel = viewModel(
+                    key = "analysis_$gameId",
+                    factory = AnalysisViewModel.Factory(
+                        gameId = gameId,
+                        gameRepository = container.gameRepository,
+                        analysisService = container.analysisService,
+                        engineManager = container.engineManager,
+                        settingsStore = container.settingsStore
+                    )
+                )
+                AnalysisScreen(
+                    viewModel = vm,
+                    onNavigateBack = { navController.popBackStack() }
                 )
             }
 

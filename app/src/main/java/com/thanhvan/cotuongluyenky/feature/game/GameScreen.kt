@@ -19,16 +19,23 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.NavigateBefore
+import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.automirrored.filled.VolumeOff
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Flag
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.SwapVert
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -61,10 +68,18 @@ import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thanhvan.cotuongluyenky.core.model.GameMode
+import com.thanhvan.cotuongluyenky.core.model.NotationStyle
 import com.thanhvan.cotuongluyenky.core.model.Side
+import com.thanhvan.cotuongluyenky.core.ui.components.EvaluationBar
 import com.thanhvan.cotuongluyenky.core.ui.components.LuyenKyCard
 import com.thanhvan.cotuongluyenky.core.ui.components.StatusPill
 import com.thanhvan.cotuongluyenky.core.ui.components.formatClockMillis
+import com.thanhvan.cotuongluyenky.domain.analysis.LiveMoveEvaluation
+import com.thanhvan.cotuongluyenky.domain.analysis.MoveClassification
+import com.thanhvan.cotuongluyenky.domain.commentary.CommentaryService
+import com.thanhvan.cotuongluyenky.domain.commentary.DangerLevel
+import com.thanhvan.cotuongluyenky.domain.commentary.PieceDangerInfo
+import com.thanhvan.cotuongluyenky.domain.rules.XiangqiNotation
 import com.thanhvan.cotuongluyenky.feature.game.components.XiangqiBoard
 import com.thanhvan.cotuongluyenky.ui.theme.AccentEmerald
 import com.thanhvan.cotuongluyenky.ui.theme.BgCard
@@ -83,6 +98,7 @@ fun GameScreen(
     viewModel: GameViewModel,
     onNavigateBack: () -> Unit,
     onNavigateToResult: (Long) -> Unit,
+    onNavigateToAnalysis: (Long) -> Unit,
     onNavigateToSettings: () -> Unit
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -146,7 +162,7 @@ fun GameScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .statusBarsPadding()
-                    .padding(horizontal = 8.dp, vertical = 6.dp),
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 IconButton(onClick = onNavigateBack) {
@@ -239,8 +255,9 @@ fun GameScreen(
                         .fillMaxSize()
                         .padding(innerPadding)
                         .navigationBarsPadding()
+                        .verticalScroll(rememberScrollState())
                         .padding(horizontal = 12.dp),
-                    verticalArrangement = Arrangement.SpaceBetween
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     // Opponent / Top player bar
                     PlayerStrip(
@@ -252,12 +269,18 @@ fun GameScreen(
                         remainingMillis = if (topSide == Side.RED) state.redRemainingMillis else state.blackRemainingMillis
                     )
 
+                    // Optional Evaluation Bar in Practice mode (Section 9.6 & 18.4)
+                    if (state.isPracticeMode && settings.showEvalBar && state.latestEvalScoreRed != null) {
+                        EvaluationBar(
+                            scoreRed = state.latestEvalScoreRed,
+                            isQuickEval = true
+                        )
+                    }
+
                     // Engine error recovery banner (Section 22.2)
                     if (state.engineError != null) {
                         LuyenKyCard(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(vertical = 4.dp),
+                            modifier = Modifier.fillMaxWidth(),
                             borderColor = ErrorRed,
                             containerColor = Color(0xFF2A1617)
                         ) {
@@ -287,30 +310,27 @@ fun GameScreen(
                         }
                     }
 
-                    // Main Xiangqi Board
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .weight(1f, fill = false),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        XiangqiBoard(
-                            board = state.board,
-                            selectedSquare = state.selectedSquare,
-                            legalTargets = state.legalTargets,
-                            lastMove = state.lastMove,
-                            checkedSide = state.checkedSide,
-                            isFlipped = state.isFlipped,
-                            pieceDisplayStyle = settings.pieceDisplayStyle,
-                            boardThemeStyle = settings.boardThemeStyle,
-                            showCoordinates = settings.showCoordinates,
-                            reduceMotion = settings.reduceMotion,
-                            animationEvent = state.animationEvent,
-                            enabled = state.isPlayerTurn && !state.isEngineThinking,
-                            onSquareTapped = { viewModel.onSquareTapped(it) },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
+                    // Main Xiangqi Board (renders live board OR Tier-4 variation preview)
+                    XiangqiBoard(
+                        board = state.displayBoard,
+                        selectedSquare = if (state.isPreviewingVariation) null else state.selectedSquare,
+                        legalTargets = if (state.isPreviewingVariation) emptySet() else state.legalTargets,
+                        lastMove = if (state.isPreviewingVariation) null else state.lastMove,
+                        checkedSide = if (state.isPreviewingVariation) null else state.checkedSide,
+                        isFlipped = state.isFlipped,
+                        pieceDisplayStyle = settings.pieceDisplayStyle,
+                        boardThemeStyle = settings.boardThemeStyle,
+                        showCoordinates = settings.showCoordinates,
+                        reduceMotion = settings.reduceMotion,
+                        animationEvent = if (state.isPreviewingVariation) null else state.animationEvent,
+                        arrows = state.activeArrows,
+                        hintPieceSquare = state.hintPieceSquare,
+                        moveFeedbackEffect = if (state.isPreviewingVariation) null else state.moveFeedbackVisual,
+                        dangerPieces = state.dangerOverlayMap,
+                        enabled = (state.isPlayerTurn && !state.isEngineThinking && !state.isPreviewingVariation) || state.isDangerCheckEnabled,
+                        onSquareTapped = { viewModel.onSquareTapped(it) },
+                        modifier = Modifier.fillMaxWidth()
+                    )
 
                     // Bottom player bar
                     PlayerStrip(
@@ -322,94 +342,159 @@ fun GameScreen(
                         remainingMillis = if (bottomSide == Side.RED) state.redRemainingMillis else state.blackRemainingMillis
                     )
 
-                    // Status / Finished banner OR Recent move notation strip
-                    if (state.isFinished) {
+                    // Tiered Hint Panel (Section 10.1–10.3)
+                    if (state.hintState.isOpen) {
+                        HintPanelCard(
+                            state = state,
+                            notationStyle = settings.notationStyle,
+                            onAdvanceTier = { viewModel.requestOrAdvanceHint() },
+                            onJumpTier = { viewModel.jumpHintToTier(it) },
+                            onStepVariation = { viewModel.stepHintVariation(it) },
+                            onSwitchVariation = { viewModel.switchHintVariation() },
+                            onClose = { viewModel.closeHint() }
+                        )
+                    }
+
+                    // Danger piece detail inspector (Section 14.1–14.3)
+                    if (state.isDangerCheckEnabled && state.inspectedDangerPiece != null) {
+                        DangerPieceInfoCard(
+                            info = state.inspectedDangerPiece!!,
+                            totalDangerCount = state.dangerPieces.size,
+                            onDismiss = { viewModel.dismissInspectedDangerPiece() },
+                            onTurnOff = { viewModel.toggleDangerCheck() }
+                        )
+                    } else if (state.isDangerCheckEnabled && state.dangerPieces.isEmpty()) {
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(BgCardElevated)
-                                .border(1.dp, AccentEmerald.copy(alpha = 0.6f), RoundedCornerShape(12.dp))
-                                .padding(horizontal = 12.dp, vertical = 10.dp),
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(BgCard)
+                                .border(1.dp, AccentEmerald.copy(alpha = 0.5f), RoundedCornerShape(10.dp))
+                                .padding(horizontal = 12.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text(
-                                    text = state.result.vietnameseLabel,
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = AccentEmerald
-                                )
-                                Text(
-                                    text = state.resultReason.vietnameseLabel,
-                                    style = MaterialTheme.typography.labelMedium,
-                                    color = TextSecondary
-                                )
+                            Text(
+                                text = "Hiện không có quân nào của bạn đang bị tấn công trực tiếp.",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = AccentEmerald,
+                                modifier = Modifier.weight(1f)
+                            )
+                            TextButton(onClick = { viewModel.toggleDangerCheck() }) {
+                                Text("Tắt", color = TextSecondary)
                             }
-                            Button(
-                                onClick = { onNavigateToResult(state.gameId) },
-                                colors = ButtonDefaults.buttonColors(containerColor = AccentEmerald)
+                        }
+                    }
+
+                    // Live Quick Evaluation Strip (Section 9.1–9.3 & 18.4)
+                    if (!state.isFinished && !state.hintState.isOpen && state.liveEvaluation != null) {
+                        LiveEvaluationCard(
+                            eval = state.liveEvaluation!!,
+                            onDismiss = { viewModel.dismissLiveEvaluation() }
+                        )
+                    }
+
+                    // Game Finished Banner with direct link to Phase 2 Analysis
+                    if (state.isFinished) {
+                        LuyenKyCard(
+                            modifier = Modifier.fillMaxWidth(),
+                            borderColor = AccentEmerald.copy(alpha = 0.65f),
+                            containerColor = BgCardElevated
+                        ) {
+                            Text(
+                                text = "${state.result.vietnameseLabel} · ${state.resultReason.vietnameseLabel}",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = AccentEmerald
+                            )
+                            Spacer(Modifier.height(10.dp))
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Text("Xem kết quả")
+                                Button(
+                                    onClick = { onNavigateToAnalysis(state.gameId) },
+                                    modifier = Modifier.weight(1f),
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentEmerald)
+                                ) {
+                                    Text("Phân tích ván", fontWeight = FontWeight.Bold)
+                                }
+                                OutlinedButton(
+                                    onClick = { onNavigateToResult(state.gameId) },
+                                    modifier = Modifier.weight(1f)
+                                ) {
+                                    Text("Xem kết quả", color = TextPrimary)
+                                }
                             }
                         }
                     } else {
-                        Column(modifier = Modifier.fillMaxWidth()) {
-                            if (state.statusBanner != null) {
-                                Text(
-                                    text = state.statusBanner ?: "",
-                                    style = MaterialTheme.typography.labelLarge,
-                                    color = if (state.checkedSide != null) ErrorRed else WarningAmber,
-                                    modifier = Modifier.padding(bottom = 4.dp, start = 4.dp)
-                                )
-                            }
-                            if (state.moves.isNotEmpty()) {
-                                LazyRow(
-                                    state = moveListState,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp),
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(vertical = 2.dp)
-                                ) {
-                                    items(state.moves, key = { it.plyIndex }) { moveRec ->
-                                        val isRed = moveRec.side == Side.RED
-                                        val turnNo = (moveRec.plyIndex / 2) + 1
-                                        val prefix = if (isRed) "$turnNo. " else ""
-                                        StatusPill(
-                                            text = "$prefix${moveRec.displayNotation(settings.notationStyle)}",
-                                            containerColor = if (isRed) Color(0xFF2B1A1C) else BgCardElevated,
-                                            contentColor = if (isRed) Color(0xFFFF8A80) else TextPrimary
-                                        )
-                                    }
+                        if (state.statusBanner != null) {
+                            Text(
+                                text = state.statusBanner ?: "",
+                                style = MaterialTheme.typography.labelLarge,
+                                color = if (state.checkedSide != null) ErrorRed else WarningAmber,
+                                modifier = Modifier.padding(start = 4.dp)
+                            )
+                        }
+                        if (state.moves.isNotEmpty()) {
+                            LazyRow(
+                                state = moveListState,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                items(state.moves, key = { it.plyIndex }) { moveRec ->
+                                    val isRed = moveRec.side == Side.RED
+                                    val turnNo = (moveRec.plyIndex / 2) + 1
+                                    val prefix = if (isRed) "$turnNo. " else ""
+                                    StatusPill(
+                                        text = "$prefix${moveRec.displayNotation(settings.notationStyle)}",
+                                        containerColor = if (isRed) Color(0xFF2B1A1C) else BgCardElevated,
+                                        contentColor = if (isRed) Color(0xFFFF8A80) else TextPrimary
+                                    )
                                 }
                             }
                         }
                     }
 
-                    // Bottom Action Bar (Section 18.4)
+                    // Bottom Action Bar (Section 18.4: Undo, Hint, Flip, Danger Check, Resign)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 8.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            .padding(top = 4.dp, bottom = 10.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         GameActionButton(
                             icon = Icons.AutoMirrored.Filled.Undo,
-                            label = if (state.mode == GameMode.CHALLENGE) "Khóa đi lại" else "Đi lại",
+                            label = "Đi lại",
                             enabled = state.canUndo,
                             onClick = { viewModel.undoMove() },
                             modifier = Modifier.weight(1f)
                         )
                         GameActionButton(
+                            icon = Icons.Filled.Lightbulb,
+                            label = "Gợi ý",
+                            enabled = state.isPracticeMode && settings.hintsEnabled && state.isPlayerTurn && !state.isEngineThinking,
+                            tint = if (state.hintState.isOpen) WarningAmber else AccentEmerald,
+                            onClick = { viewModel.requestOrAdvanceHint() },
+                            modifier = Modifier.weight(1f)
+                        )
+                        GameActionButton(
+                            icon = Icons.Filled.Shield,
+                            label = "Nguy hiểm",
+                            enabled = state.isPracticeMode && !state.isFinished,
+                            tint = if (state.isDangerCheckEnabled) WarningAmber else TextPrimary,
+                            onClick = { viewModel.toggleDangerCheck() },
+                            modifier = Modifier.weight(1f)
+                        )
+                        GameActionButton(
                             icon = Icons.Filled.SwapVert,
-                            label = "Xoay bàn",
+                            label = "Xoay",
                             enabled = true,
                             onClick = { viewModel.flipBoard() },
                             modifier = Modifier.weight(1f)
                         )
                         GameActionButton(
                             icon = Icons.Filled.Flag,
-                            label = if (state.isFinished) "Kết quả" else "Xin thua",
+                            label = if (state.isFinished) "Kết quả" else "Thua",
                             enabled = true,
                             tint = if (state.isFinished) AccentEmerald else ErrorRed,
                             onClick = {
@@ -429,6 +514,262 @@ fun GameScreen(
 }
 
 @Composable
+private fun LiveEvaluationCard(
+    eval: LiveMoveEvaluation,
+    onDismiss: () -> Unit
+) {
+    val badgeColor = classificationColor(eval.classification)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .background(BgCard)
+            .border(1.dp, badgeColor.copy(alpha = 0.55f), RoundedCornerShape(12.dp))
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                StatusPill(
+                    text = eval.classification.badgeText,
+                    containerColor = badgeColor.copy(alpha = 0.2f),
+                    contentColor = badgeColor
+                )
+                Text(
+                    text = "Đánh giá nhanh",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary
+                )
+            }
+            Spacer(Modifier.height(4.dp))
+            Text(
+                text = eval.commentary,
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextPrimary
+            )
+        }
+        IconButton(onClick = onDismiss, modifier = Modifier.size(32.dp)) {
+            Icon(Icons.Filled.Close, contentDescription = "Đóng", tint = TextSecondary, modifier = Modifier.size(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun HintPanelCard(
+    state: GameUiState,
+    notationStyle: NotationStyle,
+    onAdvanceTier: () -> Unit,
+    onJumpTier: (Int) -> Unit,
+    onStepVariation: (Int) -> Unit,
+    onSwitchVariation: () -> Unit,
+    onClose: () -> Unit
+) {
+    val hint = state.hintState
+    LuyenKyCard(
+        modifier = Modifier.fillMaxWidth(),
+        borderColor = InfoBlue.copy(alpha = 0.65f)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            val tierLabel = when (hint.tier) {
+                1 -> "Gợi ý · Tầng 1 (Ý tưởng)"
+                2 -> "Gợi ý · Tầng 2 (Chỉ quân)"
+                3 -> "Gợi ý · Tầng 3 (Chỉ nước)"
+                4 -> "Gợi ý · Tầng 4 (Xem biến)"
+                else -> "Gợi ý"
+            }
+            Text(
+                text = tierLabel,
+                style = MaterialTheme.typography.titleMedium,
+                color = InfoBlue
+            )
+            IconButton(onClick = onClose, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Filled.Close, contentDescription = "Đóng gợi ý", tint = TextSecondary, modifier = Modifier.size(18.dp))
+            }
+        }
+
+        Spacer(Modifier.height(6.dp))
+
+        when {
+            hint.isLoading -> {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = InfoBlue)
+                    Spacer(Modifier.width(10.dp))
+                    Text("Đang tìm phương án gợi ý...", style = MaterialTheme.typography.bodyMedium, color = TextSecondary)
+                }
+            }
+            hint.error != null -> {
+                Text(text = hint.error, style = MaterialTheme.typography.bodyMedium, color = ErrorRed)
+            }
+            hint.bundle != null -> {
+                val bundle = hint.bundle
+                val variation = bundle.variations.getOrNull(hint.selectedVariationIndex)
+                val bestFormatted = XiangqiNotation.format(state.board, bundle.bestMove)
+                val bestNotation = if (notationStyle == NotationStyle.FULL) bestFormatted.full else bestFormatted.short
+
+                when (hint.tier) {
+                    1 -> Text(text = bundle.ideaText, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+                    2 -> {
+                        val piece = state.board.pieceAt(bundle.bestMove.from)
+                        Text(
+                            text = "Hãy chú ý quân ${piece?.type?.vietnameseName ?: "được đánh dấu xanh"} trên bàn cờ.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextPrimary
+                        )
+                    }
+                    3 -> {
+                        Text(
+                            text = "Nước đề xuất: $bestNotation (xem mũi tên xanh trên bàn cờ).",
+                            style = MaterialTheme.typography.bodyLarge,
+                            fontWeight = FontWeight.SemiBold,
+                            color = AccentEmerald
+                        )
+                    }
+                    4 -> {
+                        val stepCount = variation?.moves?.size ?: 0
+                        Text(
+                            text = "Phương án ${hint.selectedVariationIndex + 1}/${bundle.variations.size} · Bước ${hint.previewStep}/$stepCount",
+                            style = MaterialTheme.typography.labelLarge,
+                            color = AccentEmerald
+                        )
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = CommentaryService.VARIATION_DISCLAIMER,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = TextSecondary
+                        )
+                        Spacer(Modifier.height(8.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            OutlinedButton(
+                                onClick = { onStepVariation(-1) },
+                                enabled = hint.previewStep > 0,
+                                modifier = Modifier.weight(1f),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Icon(Icons.AutoMirrored.Filled.NavigateBefore, contentDescription = null, modifier = Modifier.size(16.dp))
+                                Text("Nước trước")
+                            }
+                            Button(
+                                onClick = { onStepVariation(1) },
+                                enabled = hint.previewStep < stepCount,
+                                modifier = Modifier.weight(1f),
+                                colors = ButtonDefaults.buttonColors(containerColor = AccentEmerald),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp)
+                            ) {
+                                Text("Nước tiếp")
+                                Icon(Icons.AutoMirrored.Filled.NavigateNext, contentDescription = null, modifier = Modifier.size(16.dp))
+                            }
+                        }
+                        if (bundle.variations.size > 1) {
+                            Spacer(Modifier.height(6.dp))
+                            OutlinedButton(
+                                onClick = onSwitchVariation,
+                                modifier = Modifier.fillMaxWidth(),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp)
+                            ) {
+                                Text("Xem phương án khác", color = TextPrimary)
+                            }
+                        }
+                    }
+                }
+
+                if (hint.tier < 4) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = onAdvanceTier,
+                            modifier = Modifier.weight(1f),
+                            colors = ButtonDefaults.buttonColors(containerColor = InfoBlue),
+                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Text(
+                                text = when (hint.tier) {
+                                    1 -> "Gợi ý thêm (Chỉ quân)"
+                                    2 -> "Hiện nước đi"
+                                    else -> "Xem biến"
+                                },
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                        if (hint.tier < 3) {
+                            OutlinedButton(
+                                onClick = { onJumpTier(3) },
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp)
+                            ) {
+                                Text("Hiện nước đi", color = TextPrimary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DangerPieceInfoCard(
+    info: PieceDangerInfo,
+    totalDangerCount: Int,
+    onDismiss: () -> Unit,
+    onTurnOff: () -> Unit
+) {
+    val accent = when (info.level) {
+        DangerLevel.UNDER_ATTACK -> WarningAmber
+        DangerLevel.AT_RISK_OF_LOSS -> Color(0xFFFF7043)
+        DangerLevel.ENGINE_LOSS_LINE -> ErrorRed
+    }
+    LuyenKyCard(
+        modifier = Modifier.fillMaxWidth(),
+        borderColor = accent.copy(alpha = 0.7f)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            StatusPill(
+                text = "${info.piece.type.vietnameseName} · ${info.level.vietnameseLabel}",
+                containerColor = accent.copy(alpha = 0.2f),
+                contentColor = accent
+            )
+            TextButton(onClick = onTurnOff, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)) {
+                Text("Tắt kiểm tra", color = TextSecondary)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(text = info.level.description, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
+        Spacer(Modifier.height(4.dp))
+        val attackerNames = info.attackers.joinToString(", ") { it.second.type.vietnameseName }
+        val defenderNames = if (info.defenders.isEmpty()) "Không có" else info.defenders.joinToString(", ") { it.second.type.vietnameseName }
+        Text(
+            text = "Đang bị tấn công bởi: $attackerNames · Quân bảo vệ: $defenderNames",
+            style = MaterialTheme.typography.labelMedium,
+            color = TextSecondary
+        )
+        if (totalDangerCount > 1) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = "Có $totalDangerCount quân đang bị đe dọa — chạm vào từng quân được khoanh viền để xem chi tiết.",
+                style = MaterialTheme.typography.labelMedium,
+                color = InfoBlue
+            )
+        }
+    }
+}
+
+@Composable
 private fun PlayerStrip(
     name: String,
     side: Side,
@@ -440,7 +781,6 @@ private fun PlayerStrip(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 4.dp)
             .clip(RoundedCornerShape(12.dp))
             .background(BgCard)
             .border(
@@ -448,12 +788,12 @@ private fun PlayerStrip(
                 color = if (isTurn) AccentEmerald else BorderSubtle,
                 shape = RoundedCornerShape(12.dp)
             )
-            .padding(horizontal = 12.dp, vertical = 8.dp),
+            .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier
-                .size(28.dp)
+                .size(26.dp)
                 .clip(CircleShape)
                 .background(if (side == Side.RED) PieceRedInk else Color(0xFF27303C))
                 .border(1.dp, Color(0x55FFFFFF), CircleShape),
@@ -522,27 +862,36 @@ private fun GameActionButton(
     OutlinedButton(
         onClick = onClick,
         enabled = enabled,
-        modifier = modifier.height(46.dp),
+        modifier = modifier.height(48.dp),
         shape = RoundedCornerShape(12.dp),
-        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+        contentPadding = PaddingValues(horizontal = 4.dp, vertical = 4.dp),
         colors = ButtonDefaults.outlinedButtonColors(
             containerColor = BgCard,
             disabledContainerColor = Color(0xFF15171B)
         )
     ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = if (enabled) tint else TextSecondary.copy(alpha = 0.4f),
-            modifier = Modifier.size(18.dp)
-        )
-        Spacer(Modifier.width(6.dp))
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelMedium,
-            color = if (enabled) TextPrimary else TextSecondary.copy(alpha = 0.4f),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = if (enabled) tint else TextSecondary.copy(alpha = 0.35f),
+                modifier = Modifier.size(17.dp)
+            )
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium,
+                color = if (enabled) TextPrimary else TextSecondary.copy(alpha = 0.35f),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
     }
+}
+
+fun classificationColor(classification: MoveClassification): Color = when (classification) {
+    MoveClassification.GOOD -> AccentEmerald
+    MoveClassification.ACCEPTABLE -> InfoBlue
+    MoveClassification.INACCURACY -> WarningAmber
+    MoveClassification.MISTAKE -> Color(0xFFFF7043)
+    MoveClassification.BLUNDER -> ErrorRed
 }

@@ -15,15 +15,26 @@ import com.thanhvan.cotuongluyenky.core.model.Square
 import com.thanhvan.cotuongluyenky.data.datastore.UserSettings
 import com.thanhvan.cotuongluyenky.data.datastore.UserSettingsStore
 import com.thanhvan.cotuongluyenky.data.repository.GameRepository
+import com.thanhvan.cotuongluyenky.domain.analysis.AnalysisService
+import com.thanhvan.cotuongluyenky.domain.analysis.HintBundle
+import com.thanhvan.cotuongluyenky.domain.analysis.LiveMoveEvaluation
+import com.thanhvan.cotuongluyenky.domain.analysis.MoveClassification
+import com.thanhvan.cotuongluyenky.domain.commentary.DangerLevel
+import com.thanhvan.cotuongluyenky.domain.commentary.PieceDangerInfo
+import com.thanhvan.cotuongluyenky.domain.commentary.TacticalFactExtractor
 import com.thanhvan.cotuongluyenky.domain.rules.FenCodec
 import com.thanhvan.cotuongluyenky.domain.rules.RulesEngine
 import com.thanhvan.cotuongluyenky.engine.api.EngineDifficulty
+import com.thanhvan.cotuongluyenky.engine.api.EngineScore
 import com.thanhvan.cotuongluyenky.engine.manager.EngineManager
 import com.thanhvan.cotuongluyenky.engine.manager.EngineMoveOutcome
+import com.thanhvan.cotuongluyenky.feature.game.components.BoardArrow
 import com.thanhvan.cotuongluyenky.feature.game.components.MoveAnimationEvent
+import com.thanhvan.cotuongluyenky.feature.game.components.MoveFeedbackVisual
 import com.thanhvan.cotuongluyenky.service.haptic.HapticFeedbackManager
 import com.thanhvan.cotuongluyenky.service.sound.GameSoundEffect
 import com.thanhvan.cotuongluyenky.service.sound.SoundEffectManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -35,6 +46,20 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * 4-tier progressive hint state (Section 10.1–10.3).
+ */
+data class HintUiState(
+    val isLoading: Boolean = false,
+    val error: String? = null,
+    val tier: Int = 0, // 0 = closed, 1 = idea, 2 = piece, 3 = move+arrow, 4 = step-by-step variation
+    val bundle: HintBundle? = null,
+    val selectedVariationIndex: Int = 0,
+    val previewStep: Int = 0 // 0 = base position, 1..pv.size = stepped into variation
+) {
+    val isOpen: Boolean get() = isLoading || error != null || (tier > 0 && bundle != null)
+}
 
 data class GameUiState(
     val isLoading: Boolean = true,
@@ -61,21 +86,93 @@ data class GameUiState(
     val redRemainingMillis: Long = 0L,
     val blackRemainingMillis: Long = 0L,
     val animationEvent: MoveAnimationEvent? = null,
-    val statusBanner: String? = null
+    val statusBanner: String? = null,
+    // Phase 2 live coaching features (disabled in Challenge mode)
+    val latestEvalScoreRed: EngineScore? = null,
+    val liveEvaluation: LiveMoveEvaluation? = null,
+    val moveFeedbackVisual: MoveFeedbackVisual? = null,
+    val hintState: HintUiState = HintUiState(),
+    val isDangerCheckEnabled: Boolean = false,
+    val dangerPieces: List<PieceDangerInfo> = emptyList(),
+    val inspectedDangerPiece: PieceDangerInfo? = null
 ) {
     val isFinished: Boolean get() = result != GameResult.ONGOING
     val isPlayerTurn: Boolean get() = !isFinished && board.sideToMove == playerSide
     val lastMove: Move? get() = moves.lastOrNull()?.move
     val aiSide: Side get() = playerSide.opposite()
+    val isPracticeMode: Boolean get() = mode == GameMode.PRACTICE
     val canUndo: Boolean
-        get() = mode == GameMode.PRACTICE && moves.any { it.side == playerSide }
+        get() = isPracticeMode && moves.any { it.side == playerSide }
     val levelTitle: String get() = EngineDifficulty.profileFor(engineLevel).title
+
+    val isPreviewingVariation: Boolean
+        get() = hintState.tier == 4 && hintState.bundle != null && hintState.previewStep > 0
+
+    /**
+     * Computes the board to display: either the live board, or stepped along the active
+     * Tier-4 hint variation preview without mutating the actual game state (Section 10.2).
+     */
+    val displayBoard: BoardState
+        get() {
+            if (hintState.tier != 4 || hintState.bundle == null) return board
+            val variation = hintState.bundle.variations.getOrNull(hintState.selectedVariationIndex) ?: return board
+            var preview = board
+            val steps = hintState.previewStep.coerceIn(0, variation.moves.size)
+            for (i in 0 until steps) {
+                val mv = variation.moves[i]
+                if (!RulesEngine.isMoveLegal(preview, mv)) break
+                preview = RulesEngine.applyMoveUnchecked(preview, mv)
+            }
+            return preview
+        }
+
+    /**
+     * Validated board arrows for Tier 3 & Tier 4 hints (Section 10.2 & 17.5).
+     */
+    val activeArrows: List<BoardArrow>
+        get() {
+            val bundle = hintState.bundle ?: return emptyList()
+            val variation = bundle.variations.getOrNull(hintState.selectedVariationIndex) ?: return emptyList()
+            return when (hintState.tier) {
+                3 -> {
+                    val mv = variation.moves.firstOrNull() ?: return emptyList()
+                    if (RulesEngine.isMoveLegal(board, mv)) {
+                        listOf(BoardArrow(mv.from, mv.to, isOpponentReply = false))
+                    } else {
+                        emptyList()
+                    }
+                }
+                4 -> {
+                    val step = hintState.previewStep
+                    val mv = variation.moves.getOrNull(step) ?: return emptyList()
+                    val previewBoard = displayBoard
+                    if (RulesEngine.isMoveLegal(previewBoard, mv)) {
+                        val isOpponent = (step % 2 == 1)
+                        listOf(BoardArrow(mv.from, mv.to, isOpponentReply = isOpponent, stepNumber = step + 1))
+                    } else {
+                        emptyList()
+                    }
+                }
+                else -> emptyList()
+            }
+        }
+
+    val hintPieceSquare: Square?
+        get() = if (hintState.tier == 2) hintState.bundle?.bestMove?.from else null
+
+    val dangerOverlayMap: Map<Square, DangerLevel>
+        get() = if (!isDangerCheckEnabled || isPreviewingVariation) {
+            emptyMap()
+        } else {
+            dangerPieces.associate { it.square to it.level }
+        }
 }
 
 class GameViewModel(
     private val gameId: Long,
     private val gameRepository: GameRepository,
     private val engineManager: EngineManager,
+    private val analysisService: AnalysisService,
     private val settingsStore: UserSettingsStore,
     private val soundEffectManager: SoundEffectManager,
     private val hapticFeedbackManager: HapticFeedbackManager
@@ -92,6 +189,8 @@ class GameViewModel(
 
     private val animIdCounter = AtomicLong(0L)
     private var engineJob: Job? = null
+    private var liveEvalJob: Job? = null
+    private var hintJob: Job? = null
     private var clockJob: Job? = null
     private var isClockPaused: Boolean = false
 
@@ -184,9 +283,21 @@ class GameViewModel(
 
     fun onSquareTapped(square: Square) {
         val state = _uiState.value
-        if (state.isLoading || state.isFinished || state.isEngineThinking || !state.isPlayerTurn) {
+        if (state.isLoading || state.isFinished || state.isEngineThinking || state.isPreviewingVariation) {
             return
         }
+
+        // If Danger Check is active and user taps one of their threatened pieces, inspect its attackers/defenders
+        if (state.isDangerCheckEnabled) {
+            val danger = state.dangerPieces.firstOrNull { it.square == square }
+            if (danger != null && state.selectedSquare == null) {
+                _uiState.update { it.copy(inspectedDangerPiece = danger) }
+            } else {
+                _uiState.update { it.copy(inspectedDangerPiece = null) }
+            }
+        }
+
+        if (!state.isPlayerTurn) return
 
         val tappedPiece = state.board.pieceAt(square)
         val currentSelected = state.selectedSquare
@@ -223,7 +334,7 @@ class GameViewModel(
         }
     }
 
-    private fun executeMove(move: Move, isEngineMove: Boolean) {
+    private fun executeMove(move: Move, isEngineMove: Boolean, engineScoreRed: EngineScore? = null) {
         val state = _uiState.value
         if (state.isFinished) return
         if (!RulesEngine.isMoveLegal(state.board, move)) {
@@ -233,8 +344,16 @@ class GameViewModel(
             return
         }
 
-        val applied = RulesEngine.applyMove(state.board, move)
-        val plyIndex = state.moves.size
+        // Cancel stale hint/live-eval tasks when board state changes (Section 6.4)
+        hintJob?.cancel()
+        if (!isEngineMove) {
+            liveEvalJob?.cancel()
+        }
+
+        val boardBefore = state.board
+        val movesBefore = state.moves
+        val applied = RulesEngine.applyMove(boardBefore, move)
+        val plyIndex = movesBefore.size
         val record = MoveRecord(
             plyIndex = plyIndex,
             side = applied.movedPiece.side,
@@ -247,7 +366,7 @@ class GameViewModel(
             gaveCheck = applied.gaveCheck
         )
 
-        val updatedMoves = state.moves + record
+        val updatedMoves = movesBefore + record
         val terminal = RulesEngine.evaluateTerminalState(
             board = applied.newBoard,
             history = updatedMoves,
@@ -268,6 +387,12 @@ class GameViewModel(
             else -> null
         }
 
+        val updatedDanger = if (state.isDangerCheckEnabled && !terminal.isFinished) {
+            TacticalFactExtractor.analyzeDangerPieces(applied.newBoard, state.playerSide)
+        } else {
+            emptyList()
+        }
+
         _uiState.update {
             it.copy(
                 board = applied.newBoard,
@@ -280,7 +405,13 @@ class GameViewModel(
                 isEngineThinking = false,
                 engineError = null,
                 animationEvent = animEvent,
-                statusBanner = banner
+                statusBanner = banner,
+                latestEvalScoreRed = engineScoreRed ?: it.latestEvalScoreRed,
+                liveEvaluation = if (!isEngineMove) null else it.liveEvaluation,
+                moveFeedbackVisual = if (!isEngineMove) null else it.moveFeedbackVisual,
+                hintState = HintUiState(),
+                dangerPieces = updatedDanger,
+                inspectedDangerPiece = null
             )
         }
 
@@ -333,9 +464,221 @@ class GameViewModel(
             }
         }
 
+        // Schedule quick live evaluation of the player's move in Practice mode (Section 9)
+        if (!isEngineMove && state.isPracticeMode && curSettings.liveEvaluationEnabled && !terminal.isFinished) {
+            scheduleLiveEvaluation(
+                initialFen = state.initialFen,
+                movesBefore = movesBefore,
+                boardBefore = boardBefore,
+                playedRecord = record,
+                boardAfter = applied.newBoard
+            )
+        }
+
         if (!terminal.isFinished && applied.newBoard.sideToMove == state.aiSide) {
             triggerEngineMove()
         }
+    }
+
+    private fun scheduleLiveEvaluation(
+        initialFen: String,
+        movesBefore: List<MoveRecord>,
+        boardBefore: BoardState,
+        playedRecord: MoveRecord,
+        boardAfter: BoardState
+    ) {
+        liveEvalJob?.cancel()
+        val evaluatedPly = playedRecord.plyIndex
+        liveEvalJob = viewModelScope.launch {
+            try {
+                val curSettings = settings.value
+                val liveEval = analysisService.evaluateMoveLive(
+                    initialFen = initialFen,
+                    movesBefore = movesBefore,
+                    boardBefore = boardBefore,
+                    playedRecord = playedRecord,
+                    boardAfter = boardAfter,
+                    resourceMode = curSettings.engineResourceMode,
+                    notationStyle = curSettings.notationStyle
+                ) ?: return@launch
+
+                // Stale-result guard: only display if this move is still the player's most recent move (Section 6.4 & 9.2)
+                val latest = _uiState.value
+                val lastPlayerMove = latest.moves.lastOrNull { it.side == latest.playerSide }
+                if (lastPlayerMove == null || lastPlayerMove.plyIndex != evaluatedPly) {
+                    return@launch
+                }
+
+                val shouldDisplayFeedback = !curSettings.onlyWarnMajorBlunders ||
+                    liveEval.classification.isMajorError
+
+                val feedbackVisual = when {
+                    !shouldDisplayFeedback -> null
+                    liveEval.classification == MoveClassification.GOOD && !curSettings.showGoodMoveEffects -> null
+                    liveEval.classification == MoveClassification.ACCEPTABLE -> null
+                    else -> MoveFeedbackVisual(
+                        square = playedRecord.move.to,
+                        classification = liveEval.classification
+                    )
+                }
+
+                if (liveEval.classification.isMajorError && curSettings.vibrateOnBlunder && curSettings.hapticEnabled) {
+                    hapticFeedbackManager.blunderBuzz(enabled = true)
+                }
+
+                _uiState.update {
+                    it.copy(
+                        latestEvalScoreRed = liveEval.scoreAfterRed,
+                        liveEvaluation = if (shouldDisplayFeedback) liveEval else null,
+                        moveFeedbackVisual = feedbackVisual
+                    )
+                }
+            } catch (_: CancellationException) {
+            } catch (_: Throwable) {
+                // Live quick evaluation must never disrupt gameplay
+            }
+        }
+    }
+
+    /**
+     * Progressive 4-tier hint workflow (Section 10.1–10.3).
+     * Locked in Challenge mode.
+     */
+    fun requestOrAdvanceHint() {
+        val state = _uiState.value
+        val curSettings = settings.value
+        if (!state.isPracticeMode || !curSettings.hintsEnabled || !state.isPlayerTurn || state.isEngineThinking) {
+            return
+        }
+
+        val currentHint = state.hintState
+        // If we already have a computed hint bundle for this exact board hash, simply advance tier 1 -> 2 -> 3 -> 4!
+        if (currentHint.bundle != null && currentHint.bundle.positionHash == state.board.positionHash) {
+            val nextTier = (currentHint.tier + 1).coerceAtMost(4)
+            _uiState.update {
+                it.copy(
+                    hintState = currentHint.copy(tier = nextTier, previewStep = 0),
+                    selectedSquare = null,
+                    legalTargets = emptySet()
+                )
+            }
+            return
+        }
+
+        hintJob?.cancel()
+        val expectedHash = state.board.positionHash
+        _uiState.update {
+            it.copy(
+                hintState = HintUiState(isLoading = true, tier = 1),
+                selectedSquare = null,
+                legalTargets = emptySet()
+            )
+        }
+
+        hintJob = viewModelScope.launch {
+            gameRepository.incrementHintCount(state.gameId)
+            val position = PositionWithHistory(state.initialFen, state.board, state.moves)
+            val result = analysisService.computeHint(position, settings.value.engineResourceMode)
+
+            if (_uiState.value.board.positionHash != expectedHash) return@launch
+
+            result.fold(
+                onSuccess = { bundle ->
+                    _uiState.update {
+                        it.copy(
+                            latestEvalScoreRed = bundle.scoreRed,
+                            hintState = HintUiState(
+                                isLoading = false,
+                                tier = 1,
+                                bundle = bundle,
+                                selectedVariationIndex = 0,
+                                previewStep = 0
+                            )
+                        )
+                    }
+                },
+                onFailure = { err ->
+                    if (err is CancellationException) return@fold
+                    _uiState.update {
+                        it.copy(
+                            hintState = HintUiState(
+                                isLoading = false,
+                                error = err.message ?: "Không thể tạo gợi ý lúc này."
+                            )
+                        )
+                    }
+                }
+            )
+        }
+    }
+
+    fun jumpHintToTier(tier: Int) {
+        val current = _uiState.value.hintState
+        if (current.bundle == null) return
+        _uiState.update {
+            it.copy(
+                hintState = current.copy(
+                    tier = tier.coerceIn(1, 4),
+                    previewStep = 0
+                )
+            )
+        }
+    }
+
+    fun stepHintVariation(delta: Int) {
+        val current = _uiState.value.hintState
+        val variation = current.bundle?.variations?.getOrNull(current.selectedVariationIndex) ?: return
+        val nextStep = (current.previewStep + delta).coerceIn(0, variation.moves.size)
+        _uiState.update { it.copy(hintState = current.copy(previewStep = nextStep)) }
+    }
+
+    fun switchHintVariation() {
+        val current = _uiState.value.hintState
+        val count = current.bundle?.variations?.size ?: return
+        if (count <= 1) return
+        val nextIdx = (current.selectedVariationIndex + 1) % count
+        _uiState.update {
+            it.copy(
+                hintState = current.copy(
+                    selectedVariationIndex = nextIdx,
+                    previewStep = 0
+                )
+            )
+        }
+    }
+
+    fun closeHint() {
+        hintJob?.cancel()
+        _uiState.update { it.copy(hintState = HintUiState()) }
+    }
+
+    fun toggleDangerCheck() {
+        val state = _uiState.value
+        if (!state.isPracticeMode || state.isFinished) return
+        val enable = !state.isDangerCheckEnabled
+        if (enable) {
+            viewModelScope.launch { gameRepository.incrementDangerCheckCount(state.gameId) }
+        }
+        val pieces = if (enable) {
+            TacticalFactExtractor.analyzeDangerPieces(state.board, state.playerSide)
+        } else {
+            emptyList()
+        }
+        _uiState.update {
+            it.copy(
+                isDangerCheckEnabled = enable,
+                dangerPieces = pieces,
+                inspectedDangerPiece = pieces.firstOrNull()
+            )
+        }
+    }
+
+    fun dismissInspectedDangerPiece() {
+        _uiState.update { it.copy(inspectedDangerPiece = null) }
+    }
+
+    fun dismissLiveEvaluation() {
+        _uiState.update { it.copy(liveEvaluation = null) }
     }
 
     fun triggerEngineMove() {
@@ -374,8 +717,13 @@ class GameViewModel(
 
             when (outcome) {
                 is EngineMoveOutcome.Success -> {
+                    val redScore = outcome.result.score.toRedPerspective(state.aiSide)
                     _uiState.update { it.copy(engineName = outcome.result.engineInfo.name) }
-                    executeMove(outcome.result.bestMove, isEngineMove = true)
+                    executeMove(
+                        move = outcome.result.bestMove,
+                        isEngineMove = true,
+                        engineScoreRed = if (state.isPracticeMode) redScore else null
+                    )
                 }
                 is EngineMoveOutcome.Cancelled -> {
                     _uiState.update { it.copy(isEngineThinking = false) }
@@ -394,9 +742,8 @@ class GameViewModel(
 
     /**
      * Undo in Practice mode (Section 11.1):
-     * - Cancels active AI computation immediately.
-     * - Reverts a full turn (player move + AI reply if AI already moved), or just the player's
-     *   move if AI has not responded yet.
+     * - Cancels active AI, hint, and live-evaluation computations immediately.
+     * - Reverts a full turn (player move + AI reply if AI already moved).
      * - Reconstructs board cleanly from initial FEN + remaining moves and persists to Room.
      */
     fun undoMove() {
@@ -404,6 +751,9 @@ class GameViewModel(
         if (!state.canUndo) return
 
         engineJob?.cancel()
+        liveEvalJob?.cancel()
+        hintJob?.cancel()
+
         viewModelScope.launch {
             engineManager.cancelActiveSearch()
 
@@ -426,6 +776,11 @@ class GameViewModel(
                 else -> null
             }
             val newUndoCount = current.undoCount + 1
+            val updatedDanger = if (current.isDangerCheckEnabled) {
+                TacticalFactExtractor.analyzeDangerPieces(board, current.playerSide)
+            } else {
+                emptyList()
+            }
 
             _uiState.update {
                 it.copy(
@@ -440,6 +795,11 @@ class GameViewModel(
                     isEngineThinking = false,
                     engineError = null,
                     animationEvent = null,
+                    liveEvaluation = null,
+                    moveFeedbackVisual = null,
+                    hintState = HintUiState(),
+                    dangerPieces = updatedDanger,
+                    inspectedDangerPiece = null,
                     statusBanner = if (checkedSide != null) {
                         "Chiếu Tướng ${checkedSide.vietnameseName}!"
                     } else {
@@ -480,6 +840,8 @@ class GameViewModel(
         }
 
         engineJob?.cancel()
+        liveEvalJob?.cancel()
+        hintJob?.cancel()
         clockJob?.cancel()
         val winner = if (state.playerSide == Side.RED) GameResult.BLACK_WIN else GameResult.RED_WIN
 
@@ -490,6 +852,7 @@ class GameViewModel(
                 isEngineThinking = false,
                 selectedSquare = null,
                 legalTargets = emptySet(),
+                hintState = HintUiState(),
                 statusBanner = "${winner.vietnameseLabel} · Xin thua"
             )
         }
@@ -547,6 +910,8 @@ class GameViewModel(
 
                 if ((turn == Side.RED && newRed <= 0L) || (turn == Side.BLACK && newBlack <= 0L)) {
                     engineJob?.cancel()
+                    liveEvalJob?.cancel()
+                    hintJob?.cancel()
                     engineManager.cancelActiveSearch()
                     val winner = if (turn == Side.RED) GameResult.BLACK_WIN else GameResult.RED_WIN
                     _uiState.update {
@@ -558,6 +923,7 @@ class GameViewModel(
                             isEngineThinking = false,
                             selectedSquare = null,
                             legalTargets = emptySet(),
+                            hintState = HintUiState(),
                             statusBanner = "${winner.vietnameseLabel} · Hết giờ"
                         )
                     }
@@ -591,6 +957,8 @@ class GameViewModel(
 
     override fun onCleared() {
         engineJob?.cancel()
+        liveEvalJob?.cancel()
+        hintJob?.cancel()
         clockJob?.cancel()
         super.onCleared()
     }
@@ -599,6 +967,7 @@ class GameViewModel(
         private val gameId: Long,
         private val gameRepository: GameRepository,
         private val engineManager: EngineManager,
+        private val analysisService: AnalysisService,
         private val settingsStore: UserSettingsStore,
         private val soundEffectManager: SoundEffectManager,
         private val hapticFeedbackManager: HapticFeedbackManager
@@ -609,6 +978,7 @@ class GameViewModel(
                 gameId = gameId,
                 gameRepository = gameRepository,
                 engineManager = engineManager,
+                analysisService = analysisService,
                 settingsStore = settingsStore,
                 soundEffectManager = soundEffectManager,
                 hapticFeedbackManager = hapticFeedbackManager

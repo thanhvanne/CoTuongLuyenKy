@@ -10,12 +10,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Analytics
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,6 +29,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.thanhvan.cotuongluyenky.core.model.AnalysisStatus
 import com.thanhvan.cotuongluyenky.core.model.GameResult
 import com.thanhvan.cotuongluyenky.core.model.GameStatus
 import com.thanhvan.cotuongluyenky.core.ui.components.LuyenKyCard
@@ -42,6 +49,7 @@ fun HistoryScreen(
     viewModel: HistoryViewModel,
     onResumeGame: (Long) -> Unit,
     onOpenResult: (Long) -> Unit,
+    onOpenAnalysis: (Long) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -83,13 +91,13 @@ fun HistoryScreen(
             ) {
                 LuyenKyCard(modifier = Modifier.fillMaxWidth()) {
                     Text(
-                        text = "Chưa có ván đấu nào",
+                        text = "Chưa có ván đấu phù hợp",
                         style = MaterialTheme.typography.titleMedium,
                         color = TextPrimary
                     )
                     Spacer(Modifier.height(6.dp))
                     Text(
-                        text = "Các ván đấu bạn chơi với máy sẽ tự động được lưu tại đây để tiếp tục hoặc phân tích sau.",
+                        text = "Các ván đấu bạn chơi với máy sẽ tự động được lưu tại đây để tiếp tục hoặc phân tích từng nước.",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary
                     )
@@ -109,7 +117,8 @@ fun HistoryScreen(
                             } else {
                                 onOpenResult(game.id)
                             }
-                        }
+                        },
+                        onAnalyze = { onOpenAnalysis(game.id) }
                     )
                 }
             }
@@ -120,13 +129,23 @@ fun HistoryScreen(
 @Composable
 private fun GameHistoryItemCard(
     game: GameSummary,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    onAnalyze: () -> Unit
 ) {
     val (badgeText, badgeColor) = when {
         game.status == GameStatus.IN_PROGRESS -> "Đang dở" to WarningAmber
         game.result == GameResult.DRAW -> "Hòa" to InfoBlue
         game.playerWon -> "Thắng" to AccentEmerald
         else -> "Thua" to ErrorRed
+    }
+
+    val analysisText = when (game.analysisStatus) {
+        AnalysisStatus.COMPLETED -> "Đã phân tích"
+        AnalysisStatus.PARTIAL -> "Phân tích một phần"
+        AnalysisStatus.IN_PROGRESS -> "Đang phân tích"
+        AnalysisStatus.INTERRUPTED -> "Phân tích gián đoạn"
+        AnalysisStatus.ERROR -> "Lỗi phân tích"
+        AnalysisStatus.NOT_ANALYZED -> "Chưa phân tích"
     }
 
     LuyenKyCard(
@@ -162,22 +181,54 @@ private fun GameHistoryItemCard(
                 color = TextSecondary
             )
         }
-        Spacer(Modifier.height(4.dp))
+        Spacer(Modifier.height(6.dp))
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(
-                text = formatTimestamp(game.updatedAt),
-                style = MaterialTheme.typography.labelMedium,
-                color = TextSecondary
+            StatusPill(
+                text = analysisText,
+                containerColor = BgCardElevated,
+                contentColor = if (game.analysisStatus == AnalysisStatus.COMPLETED) AccentEmerald else TextSecondary
             )
-            if (game.undoCount > 0) {
-                Text(
-                    text = "Đi lại: ${game.undoCount}",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = WarningAmber
+            if (game.blunderCount > 0) {
+                StatusPill(
+                    text = "${game.blunderCount} lỗi lớn (??)",
+                    containerColor = ErrorRed.copy(alpha = 0.18f),
+                    contentColor = ErrorRed
                 )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column {
+                Text(
+                    text = formatTimestamp(game.updatedAt),
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary
+                )
+                if (game.undoCount > 0 || game.hintCount > 0) {
+                    Text(
+                        text = "Đi lại: ${game.undoCount} · Gợi ý: ${game.hintCount}",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = WarningAmber
+                    )
+                }
+            }
+            if (game.moveCount > 0) {
+                OutlinedButton(
+                    onClick = onAnalyze,
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp)
+                ) {
+                    Icon(Icons.Filled.Analytics, contentDescription = null, tint = AccentEmerald, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("Phân tích", color = AccentEmerald)
+                }
             }
         }
     }

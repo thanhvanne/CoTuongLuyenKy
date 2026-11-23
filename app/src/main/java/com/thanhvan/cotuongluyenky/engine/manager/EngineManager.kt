@@ -3,15 +3,34 @@ package com.thanhvan.cotuongluyenky.engine.manager
 import com.thanhvan.cotuongluyenky.core.model.EngineResourceMode
 import com.thanhvan.cotuongluyenky.core.model.PositionWithHistory
 import com.thanhvan.cotuongluyenky.domain.rules.RulesEngine
+import com.thanhvan.cotuongluyenky.engine.api.EngineAnalysis
 import com.thanhvan.cotuongluyenky.engine.api.EngineConfig
 import com.thanhvan.cotuongluyenky.engine.api.EngineDifficulty
 import com.thanhvan.cotuongluyenky.engine.api.EngineInfo
 import com.thanhvan.cotuongluyenky.engine.api.EngineMoveResult
+import com.thanhvan.cotuongluyenky.engine.api.EngineVariation
+import com.thanhvan.cotuongluyenky.engine.api.SearchLimit
 import com.thanhvan.cotuongluyenky.engine.api.XiangqiEngine
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicLong
+
+sealed class EngineAnalysisOutcome {
+    data class Success(
+        val requestId: Long,
+        val positionHash: Long,
+        val analysis: EngineAnalysis
+    ) : EngineAnalysisOutcome()
+
+    data class Cancelled(val requestId: Long) : EngineAnalysisOutcome()
+
+    data class Failure(
+        val requestId: Long,
+        val message: String,
+        val cause: Throwable? = null
+    ) : EngineAnalysisOutcome()
+}
 
 sealed class EngineMoveOutcome {
     data class Success(
@@ -177,6 +196,84 @@ class EngineManager(
                 cause = t
             )
         }
+    }
+
+    /**
+     * Runs a Multi-PV position analysis off the main thread, validating every returned variation
+     * through [RulesEngine] and discarding stale results via [requestId] + [positionHash] (Section 6.4).
+     */
+    suspend fun analyzePosition(
+        position: PositionWithHistory,
+        limit: SearchLimit,
+        variations: Int = 3,
+        resourceMode: EngineResourceMode = currentResourceMode,
+        preemptActive: Boolean = true
+    ): EngineAnalysisOutcome {
+        val requestId = if (preemptActive) {
+            val id = activeRequestId.incrementAndGet()
+            try {
+                activeEngine.stop()
+            } catch (_: Throwable) {
+            }
+            id
+        } else {
+            activeRequestId.get()
+        }
+
+        val expectedHash = position.currentBoard.positionHash
+        return try {
+            ensureInitialized(resourceMode)
+
+            mutex.withLock {
+                if (preemptActive && activeRequestId.get() != requestId) {
+                    return@withLock EngineAnalysisOutcome.Cancelled(requestId)
+                }
+
+                val raw = activeEngine.analyze(
+                    position = position,
+                    limit = limit,
+                    variations = variations.coerceIn(1, 5)
+                )
+
+                if (preemptActive && activeRequestId.get() != requestId) {
+                    return@withLock EngineAnalysisOutcome.Cancelled(requestId)
+                }
+
+                // Strictly verify every move in every variation against RulesEngine (Section 1.4 & 10.2)
+                val verifiedVariations = raw.variations.mapNotNull { variation ->
+                    val legalPv = verifyVariationLegality(position.currentBoard, variation.moves)
+                    if (legalPv.isEmpty()) null else variation.copy(moves = legalPv)
+                }
+
+                EngineAnalysisOutcome.Success(
+                    requestId = requestId,
+                    positionHash = expectedHash,
+                    analysis = raw.copy(variations = verifiedVariations)
+                )
+            }
+        } catch (ce: CancellationException) {
+            throw ce
+        } catch (t: Throwable) {
+            EngineAnalysisOutcome.Failure(
+                requestId = requestId,
+                message = "Không thể phân tích thế cờ: ${t.message ?: "lỗi không xác định"}",
+                cause = t
+            )
+        }
+    }
+
+    private fun verifyVariationLegality(
+        startBoard: com.thanhvan.cotuongluyenky.core.model.BoardState,
+        moves: List<com.thanhvan.cotuongluyenky.core.model.Move>
+    ): List<com.thanhvan.cotuongluyenky.core.model.Move> {
+        val valid = ArrayList<com.thanhvan.cotuongluyenky.core.model.Move>(moves.size)
+        var current = startBoard
+        for (mv in moves) {
+            if (!RulesEngine.isMoveLegal(current, mv)) break
+            valid.add(mv)
+            current = RulesEngine.applyMoveUnchecked(current, mv)
+        }
+        return valid
     }
 
     suspend fun shutdown() {
