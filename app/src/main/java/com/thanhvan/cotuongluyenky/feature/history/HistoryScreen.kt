@@ -50,6 +50,7 @@ fun HistoryScreen(
     onResumeGame: (Long) -> Unit,
     onOpenResult: (Long) -> Unit,
     onOpenAnalysis: (Long) -> Unit,
+    onOpenTraining: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -83,6 +84,35 @@ fun HistoryScreen(
         }
 
         Spacer(Modifier.height(12.dp))
+
+        val gamesWithBlunders = state.games.count { it.blunderCount > 0 }
+        if (gamesWithBlunders > 0) {
+            LuyenKyCard(
+                modifier = Modifier.fillMaxWidth(),
+                borderColor = WarningAmber.copy(alpha = 0.5f),
+                onClick = onOpenTraining
+            ) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "Gợi ý luyện lại lỗi",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = WarningAmber
+                        )
+                        Text(
+                            text = "Bạn có $gamesWithBlunders ván ghi nhận sai lầm nghiêm trọng — mở tab Luyện tập để tạo bài sửa sai.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = TextSecondary
+                        )
+                    }
+                }
+            }
+            Spacer(Modifier.height(10.dp))
+        }
 
         if (state.games.isEmpty()) {
             Box(

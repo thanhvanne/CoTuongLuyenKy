@@ -1,5 +1,7 @@
 package com.thanhvan.cotuongluyenky.feature.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -42,6 +44,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.thanhvan.cotuongluyenky.BuildConfig
@@ -57,8 +60,10 @@ import com.thanhvan.cotuongluyenky.ui.theme.BgCardElevated
 import com.thanhvan.cotuongluyenky.ui.theme.BgMain
 import com.thanhvan.cotuongluyenky.ui.theme.BorderSubtle
 import com.thanhvan.cotuongluyenky.ui.theme.ErrorRed
+import com.thanhvan.cotuongluyenky.ui.theme.InfoBlue
 import com.thanhvan.cotuongluyenky.ui.theme.TextPrimary
 import com.thanhvan.cotuongluyenky.ui.theme.TextSecondary
+import com.thanhvan.cotuongluyenky.ui.theme.WarningAmber
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
@@ -67,8 +72,104 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit
 ) {
     val settings by viewModel.settings.collectAsStateWithLifecycle()
+    val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val engineInfo = viewModel.engineInfo
+    val context = LocalContext.current
     var showClearDialog by remember { mutableStateOf(false) }
+    var showClearPuzzlesDialog by remember { mutableStateOf(false) }
+
+    // System file pickers for JSON Export / Import (Section 20.9 & 23.3 — no storage permissions needed)
+    val exportLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) {
+            viewModel.exportBackup { json ->
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.use { out ->
+                        out.write(json.toByteArray(Charsets.UTF_8))
+                    }
+                }
+            }
+        }
+    }
+
+    val importLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) {
+            val content = runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader(Charsets.UTF_8)?.use { it.readText() }
+            }.getOrNull()
+            if (content != null) {
+                viewModel.inspectImportJson(content)
+            }
+        }
+    }
+
+    if (showClearPuzzlesDialog) {
+        AlertDialog(
+            onDismissRequest = { showClearPuzzlesDialog = false },
+            containerColor = BgCard,
+            title = { Text("Xóa bài tập cá nhân?", color = TextPrimary) },
+            text = {
+                Text(
+                    "Thao tác này sẽ xóa toàn bộ bài tập sửa sai và bài tự lưu của bạn (vẫn giữ lại bộ bài tập chuẩn ban đầu).",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showClearPuzzlesDialog = false
+                        viewModel.clearUserPuzzles()
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = WarningAmber)
+                ) {
+                    Text("Xóa bài tập", color = BgMain)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showClearPuzzlesDialog = false }) {
+                    Text("Hủy", color = TextPrimary)
+                }
+            }
+        )
+    }
+
+    backupState.pendingImport?.let { pending ->
+        AlertDialog(
+            onDismissRequest = { viewModel.cancelPendingImport() },
+            containerColor = BgCard,
+            title = { Text("Xác nhận nhập dữ liệu sao lưu", color = TextPrimary) },
+            text = {
+                Text(
+                    text = "File hợp lệ (phiên bản v${pending.schemaVersion}, ứng dụng ${pending.appVersion}): " +
+                        "${pending.games.size} ván đấu và ${pending.puzzles.size} bài tập" +
+                        (if (pending.skippedInvalidEntries > 0) " (${pending.skippedInvalidEntries} mục không hợp lệ sẽ được bỏ qua)" else "") +
+                        ". Bạn muốn gộp thêm hay thay thế dữ liệu cũ?",
+                    color = TextSecondary
+                )
+            },
+            confirmButton = {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { viewModel.confirmImport(replaceExisting = true) }) {
+                        Text("Thay thế", color = ErrorRed)
+                    }
+                    Button(
+                        onClick = { viewModel.confirmImport(replaceExisting = false) },
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentEmerald)
+                    ) {
+                        Text("Gộp thêm")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { viewModel.cancelPendingImport() }) {
+                    Text("Hủy", color = TextPrimary)
+                }
+            }
+        )
+    }
 
     if (showClearDialog) {
         AlertDialog(
@@ -294,22 +395,51 @@ fun SettingsScreen(
                 )
             }
 
-            // Local data
+            // Local data & Export/Import (Section 18.11 & 20.9)
             LuyenKyCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Dữ liệu cục bộ", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                Text("Dữ liệu cục bộ & Sao lưu", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                 Spacer(Modifier.height(6.dp))
                 Text(
-                    text = "Toàn bộ ván đấu được lưu offline trong cơ sở dữ liệu Room trên thiết bị của bạn.",
+                    text = "Toàn bộ ván đấu và bài tập được lưu offline trên thiết bị. Dung lượng dữ liệu: ${backupState.storageSizeText}",
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary
                 )
+                if (backupState.statusMessage != null) {
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        text = backupState.statusMessage ?: "",
+                        style = MaterialTheme.typography.labelLarge,
+                        color = if (backupState.isError) ErrorRed else AccentEmerald
+                    )
+                }
                 Spacer(Modifier.height(10.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedButton(
+                        onClick = { exportLauncher.launch("cotuong_luyenky_backup.json") },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Xuất dữ liệu (JSON)", color = AccentEmerald)
+                    }
+                    OutlinedButton(
+                        onClick = { importLauncher.launch(arrayOf("application/json", "text/plain", "*/*")) },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Nhập dữ liệu", color = InfoBlue)
+                    }
                     OutlinedButton(
                         onClick = { viewModel.clearAnalysisCache() },
                         shape = RoundedCornerShape(12.dp)
                     ) {
                         Text("Xóa cache phân tích", color = TextPrimary)
+                    }
+                    OutlinedButton(
+                        onClick = { showClearPuzzlesDialog = true },
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Xóa bài tập cá nhân", color = WarningAmber)
                     }
                     OutlinedButton(
                         onClick = { showClearDialog = true },

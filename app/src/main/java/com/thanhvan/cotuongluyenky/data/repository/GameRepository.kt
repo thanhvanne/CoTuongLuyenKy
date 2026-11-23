@@ -255,6 +255,34 @@ class GameRepository(
         gameDao.deleteAllGames()
     }
 
+    suspend fun getAllGamesWithRawMoves(): List<Pair<GameEntity, List<MoveEntity>>> {
+        val games = gameDao.getAllGamesRaw()
+        return games.map { g -> g to moveDao.getMovesForGame(g.id) }
+    }
+
+    suspend fun getAllMoveAnalysesRaw(): List<MoveAnalysisEntity> =
+        analysisDao.getAllAnalysisRaw()
+
+    suspend fun importGamesWithMoves(
+        imported: List<Pair<GameEntity, List<MoveEntity>>>,
+        replaceExisting: Boolean
+    ): Int {
+        var count = 0
+        database.withTransaction {
+            if (replaceExisting) {
+                gameDao.deleteAllGames()
+            }
+            for ((game, moves) in imported) {
+                val newGameId = gameDao.insertGame(game.copy(id = 0L))
+                for (move in moves) {
+                    moveDao.insertMove(move.copy(id = 0L, gameId = newGameId))
+                }
+                count++
+            }
+        }
+        return count
+    }
+
     suspend fun clearAllAnalysisCache() {
         database.withTransaction {
             analysisDao.deleteAllAnalysis()

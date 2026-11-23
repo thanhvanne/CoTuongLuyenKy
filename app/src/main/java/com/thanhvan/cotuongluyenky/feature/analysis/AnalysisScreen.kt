@@ -28,6 +28,7 @@ import androidx.compose.material.icons.automirrored.filled.NavigateBefore
 import androidx.compose.material.icons.automirrored.filled.NavigateNext
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.Analytics
+import androidx.compose.material.icons.filled.BookmarkAdd
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FirstPage
@@ -292,7 +293,9 @@ fun AnalysisScreen(
                             state = state,
                             notationStyle = settings.notationStyle,
                             onOpenVariation = { viewModel.openVariationPreview() },
-                            onStartTryOut = { viewModel.startTryOutBranch() }
+                            onStartTryOut = { viewModel.startTryOutBranch() },
+                            onSavePuzzle = { viewModel.saveCurrentPositionAsPuzzle() },
+                            onDismissSavedMessage = { viewModel.dismissSavedPuzzleMessage() }
                         )
                     }
 
@@ -608,7 +611,9 @@ private fun SelectedMoveCommentaryCard(
     state: AnalysisUiState,
     notationStyle: NotationStyle,
     onOpenVariation: () -> Unit,
-    onStartTryOut: () -> Unit
+    onStartTryOut: () -> Unit,
+    onSavePuzzle: () -> Unit,
+    onDismissSavedMessage: () -> Unit
 ) {
     val record = state.selectedMoveRecord
     val analysis = state.selectedPlyAnalysis
@@ -704,6 +709,34 @@ private fun SelectedMoveCommentaryCard(
                 Icon(Icons.Filled.Science, contentDescription = null, tint = InfoBlue, modifier = Modifier.size(16.dp))
                 Spacer(Modifier.width(6.dp))
                 Text("Đánh thử", color = TextPrimary)
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        OutlinedButton(
+            onClick = onSavePuzzle,
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp)
+        ) {
+            Icon(Icons.Filled.BookmarkAdd, contentDescription = null, tint = WarningAmber, modifier = Modifier.size(16.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Lưu thế này thành bài tập", color = WarningAmber)
+        }
+        if (state.savedPuzzleMessage != null) {
+            Spacer(Modifier.height(6.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = state.savedPuzzleMessage,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = AccentEmerald,
+                    modifier = Modifier.weight(1f)
+                )
+                TextButton(onClick = onDismissSavedMessage) {
+                    Text("Đóng", color = TextSecondary)
+                }
             }
         }
     }

@@ -6,8 +6,10 @@ import androidx.lifecycle.viewModelScope
 import com.thanhvan.cotuongluyenky.core.model.AnalysisStatus
 import com.thanhvan.cotuongluyenky.data.repository.GameRepository
 import com.thanhvan.cotuongluyenky.data.repository.PersistedGame
+import com.thanhvan.cotuongluyenky.data.repository.PuzzleRepository
 import com.thanhvan.cotuongluyenky.domain.analysis.AnalysisService
 import com.thanhvan.cotuongluyenky.domain.analysis.MoveClassification
+import com.thanhvan.cotuongluyenky.domain.training.TrainingService
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -24,13 +26,16 @@ data class ResultAnalysisSummary(
 data class ResultUiState(
     val isLoading: Boolean = true,
     val game: PersistedGame? = null,
-    val analysisSummary: ResultAnalysisSummary? = null
+    val analysisSummary: ResultAnalysisSummary? = null,
+    val isPreparingPuzzles: Boolean = false
 )
 
 class ResultViewModel(
     private val gameId: Long,
     private val gameRepository: GameRepository,
-    private val analysisService: AnalysisService
+    private val analysisService: AnalysisService,
+    private val trainingService: TrainingService,
+    private val puzzleRepository: PuzzleRepository
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(ResultUiState())
@@ -56,14 +61,34 @@ class ResultViewModel(
         }
     }
 
+    /**
+     * Generates mistake puzzles from this game (if not already generated) and opens the first one (Section 18.5).
+     */
+    fun openMistakePractice(onOpenPuzzle: (Long) -> Unit, onNoMistakeFound: () -> Unit) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isPreparingPuzzles = true)
+            val created = trainingService.generateMistakePuzzlesForGame(gameId)
+            val targetId = created.firstOrNull()
+                ?: puzzleRepository.getAllPuzzles().firstOrNull { it.sourceGameId == gameId }?.id
+            _uiState.value = _uiState.value.copy(isPreparingPuzzles = false)
+            if (targetId != null) {
+                onOpenPuzzle(targetId)
+            } else {
+                onNoMistakeFound()
+            }
+        }
+    }
+
     class Factory(
         private val gameId: Long,
         private val gameRepository: GameRepository,
-        private val analysisService: AnalysisService
+        private val analysisService: AnalysisService,
+        private val trainingService: TrainingService,
+        private val puzzleRepository: PuzzleRepository
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
-            return ResultViewModel(gameId, gameRepository, analysisService) as T
+            return ResultViewModel(gameId, gameRepository, analysisService, trainingService, puzzleRepository) as T
         }
     }
 }

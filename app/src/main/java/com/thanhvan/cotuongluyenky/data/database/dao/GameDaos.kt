@@ -89,6 +89,9 @@ interface GameDao {
     @Query("UPDATE games SET dangerCheckCount = dangerCheckCount + 1, updatedAt = :updatedAt WHERE id = :gameId")
     suspend fun incrementDangerCheckCount(gameId: Long, updatedAt: Long)
 
+    @Query("SELECT * FROM games ORDER BY id ASC")
+    suspend fun getAllGamesRaw(): List<GameEntity>
+
     @Query("DELETE FROM games WHERE id = :gameId")
     suspend fun deleteGameById(gameId: Long)
 

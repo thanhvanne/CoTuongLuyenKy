@@ -15,8 +15,10 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Restore
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
@@ -50,6 +52,9 @@ fun HomeScreen(
     viewModel: HomeViewModel,
     onOpenSetup: () -> Unit,
     onResumeGame: (Long) -> Unit,
+    onOpenPositionEditor: () -> Unit,
+    onStartDuePuzzle: (Long) -> Unit,
+    onOpenTrainingTab: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -213,7 +218,59 @@ fun HomeScreen(
             }
         }
 
-        // Card 3: Transparent Stats Snapshot (Section 16.1 & 18.2 - zero fake metrics)
+        // Card 3: Luyện hôm nay (Section 18.2)
+        LuyenKyCard(
+            modifier = Modifier.fillMaxWidth(),
+            borderColor = InfoBlue.copy(alpha = 0.55f)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Filled.School, contentDescription = null, tint = InfoBlue)
+                    Spacer(Modifier.width(8.dp))
+                    Text("Luyện hôm nay", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                }
+                StatusPill(
+                    text = "${state.duePuzzlesCount} bài cần ôn",
+                    containerColor = InfoBlue.copy(alpha = 0.2f),
+                    contentColor = InfoBlue
+                )
+            }
+            Spacer(Modifier.height(6.dp))
+            Text(
+                text = "Đã hoàn thành ${state.solvedPuzzlesCount} bài tập. Giải nhanh các bài đến hạn hoặc ôn lại sai lầm từ ván đã chơi.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TextSecondary
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(
+                    onClick = {
+                        val id = state.nextDuePuzzleId
+                        if (id != null) onStartDuePuzzle(id) else onOpenTrainingTab()
+                    },
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = InfoBlue)
+                ) {
+                    Text("Luyện ngay", fontWeight = FontWeight.Bold)
+                }
+                OutlinedButton(
+                    onClick = onOpenPositionEditor,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Icon(Icons.Filled.Edit, contentDescription = null, tint = TextPrimary, modifier = Modifier.size(16.dp))
+                    Spacer(Modifier.width(4.dp))
+                    Text("Nhập thế cờ", color = TextPrimary)
+                }
+            }
+        }
+
+        // Card 4: Transparent Stats Snapshot (Section 16.1 & 18.2)
         LuyenKyCard(modifier = Modifier.fillMaxWidth()) {
             Text(
                 text = "Thống kê của bạn",
@@ -246,21 +303,6 @@ fun HomeScreen(
                     )
                 }
             }
-        }
-
-        // Roadmap info card (honest scope note for Phase 1)
-        LuyenKyCard(modifier = Modifier.fillMaxWidth()) {
-            Text(
-                text = "Bộ luật áp dụng",
-                style = MaterialTheme.typography.titleMedium,
-                color = TextPrimary
-            )
-            Spacer(Modifier.height(4.dp))
-            Text(
-                text = "Luật Cờ Tướng WXF cơ bản: Chiếu bí và Hết nước đi hợp lệ đều tính thua, cấm lộ mặt Tướng, xử thua chiếu kéo dài 3 lần lặp và hòa 60 nước không ăn quân.",
-                style = MaterialTheme.typography.bodyMedium,
-                color = TextSecondary
-            )
         }
     }
 }
