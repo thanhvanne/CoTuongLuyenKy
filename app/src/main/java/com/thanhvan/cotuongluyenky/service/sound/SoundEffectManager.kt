@@ -11,7 +11,9 @@ enum class GameSoundEffect {
     CHECK,
     WIN,
     LOSE,
-    DRAW
+    DRAW,
+    PUZZLE_CORRECT,
+    PUZZLE_WRONG
 }
 
 /**
@@ -36,7 +38,9 @@ class SoundEffectManager(context: Context) {
         GameSoundEffect.CHECK to soundPool.load(context, R.raw.sfx_check, 1),
         GameSoundEffect.WIN to soundPool.load(context, R.raw.sfx_win, 1),
         GameSoundEffect.LOSE to soundPool.load(context, R.raw.sfx_lose, 1),
-        GameSoundEffect.DRAW to soundPool.load(context, R.raw.sfx_draw, 1)
+        GameSoundEffect.DRAW to soundPool.load(context, R.raw.sfx_draw, 1),
+        GameSoundEffect.PUZZLE_CORRECT to soundPool.load(context, R.raw.sfx_puzzle_correct, 1),
+        GameSoundEffect.PUZZLE_WRONG to soundPool.load(context, R.raw.sfx_puzzle_wrong, 1)
     )
 
     fun play(effect: GameSoundEffect, enabled: Boolean, volume: Float) {

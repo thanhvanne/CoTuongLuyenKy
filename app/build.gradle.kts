@@ -14,8 +14,8 @@ android {
         applicationId = "com.thanhvan.cotuongluyenky"
         minSdk = 29
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.0.0-phase2"
+        versionCode = 3
+        versionName = "1.0.0-phase3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

@@ -35,6 +35,10 @@ import com.thanhvan.cotuongluyenky.feature.history.HistoryScreen
 import com.thanhvan.cotuongluyenky.feature.history.HistoryViewModel
 import com.thanhvan.cotuongluyenky.feature.home.HomeScreen
 import com.thanhvan.cotuongluyenky.feature.home.HomeViewModel
+import com.thanhvan.cotuongluyenky.feature.positioneditor.PositionEditorScreen
+import com.thanhvan.cotuongluyenky.feature.positioneditor.PositionEditorViewModel
+import com.thanhvan.cotuongluyenky.feature.puzzle.PuzzleScreen
+import com.thanhvan.cotuongluyenky.feature.puzzle.PuzzleViewModel
 import com.thanhvan.cotuongluyenky.feature.result.ResultScreen
 import com.thanhvan.cotuongluyenky.feature.result.ResultViewModel
 import com.thanhvan.cotuongluyenky.feature.settings.SettingsScreen
@@ -42,6 +46,7 @@ import com.thanhvan.cotuongluyenky.feature.settings.SettingsViewModel
 import com.thanhvan.cotuongluyenky.feature.setup.SetupScreen
 import com.thanhvan.cotuongluyenky.feature.setup.SetupViewModel
 import com.thanhvan.cotuongluyenky.feature.training.TrainingScreen
+import com.thanhvan.cotuongluyenky.feature.training.TrainingViewModel
 import com.thanhvan.cotuongluyenky.ui.theme.AccentEmerald
 import com.thanhvan.cotuongluyenky.ui.theme.BgCard
 import com.thanhvan.cotuongluyenky.ui.theme.BgMain
@@ -55,11 +60,14 @@ object Routes {
     const val GAME = "game/{gameId}"
     const val RESULT = "result/{gameId}"
     const val ANALYSIS = "analysis/{gameId}"
+    const val PUZZLE = "puzzle/{puzzleId}"
+    const val POSITION_EDITOR = "position_editor"
     const val SETTINGS = "settings"
 
     fun game(gameId: Long) = "game/$gameId"
     fun result(gameId: Long) = "result/$gameId"
     fun analysis(gameId: Long) = "analysis/$gameId"
+    fun puzzle(puzzleId: Long) = "puzzle/$puzzleId"
 }
 
 private enum class BottomTab(
@@ -80,6 +88,16 @@ fun CoTuongAppRoot(container: AppContainer) {
 
     val showBottomBar = currentRoute in setOf(Routes.HOME, Routes.HISTORY, Routes.TRAINING)
 
+    fun switchBottomTab(route: String) {
+        navController.navigate(route) {
+            popUpTo(navController.graph.findStartDestination().id) {
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
     Scaffold(
         containerColor = BgMain,
         bottomBar = {
@@ -89,15 +107,7 @@ fun CoTuongAppRoot(container: AppContainer) {
                         val selected = currentRoute == tab.route
                         NavigationBarItem(
                             selected = selected,
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
+                            onClick = { switchBottomTab(tab.route) },
                             icon = { Icon(tab.icon, contentDescription = tab.label) },
                             label = { Text(tab.label) },
                             colors = NavigationBarItemDefaults.colors(
@@ -124,6 +134,7 @@ fun CoTuongAppRoot(container: AppContainer) {
                 val vm: HomeViewModel = viewModel(
                     factory = HomeViewModel.Factory(
                         gameRepository = container.gameRepository,
+                        puzzleRepository = container.puzzleRepository,
                         settingsStore = container.settingsStore,
                         engineManager = container.engineManager
                     )
@@ -132,6 +143,9 @@ fun CoTuongAppRoot(container: AppContainer) {
                     viewModel = vm,
                     onOpenSetup = { navController.navigate(Routes.SETUP) },
                     onResumeGame = { id -> navController.navigate(Routes.game(id)) },
+                    onOpenPositionEditor = { navController.navigate(Routes.POSITION_EDITOR) },
+                    onStartDuePuzzle = { id -> navController.navigate(Routes.puzzle(id)) },
+                    onOpenTrainingTab = { switchBottomTab(Routes.TRAINING) },
                     onOpenSettings = { navController.navigate(Routes.SETTINGS) }
                 )
             }
@@ -144,12 +158,24 @@ fun CoTuongAppRoot(container: AppContainer) {
                     viewModel = vm,
                     onResumeGame = { id -> navController.navigate(Routes.game(id)) },
                     onOpenResult = { id -> navController.navigate(Routes.result(id)) },
-                    onOpenAnalysis = { id -> navController.navigate(Routes.analysis(id)) }
+                    onOpenAnalysis = { id -> navController.navigate(Routes.analysis(id)) },
+                    onOpenTraining = { switchBottomTab(Routes.TRAINING) }
                 )
             }
 
             composable(Routes.TRAINING) {
-                TrainingScreen()
+                val vm: TrainingViewModel = viewModel(
+                    factory = TrainingViewModel.Factory(
+                        puzzleRepository = container.puzzleRepository,
+                        trainingService = container.trainingService,
+                        statisticsService = container.statisticsService
+                    )
+                )
+                TrainingScreen(
+                    viewModel = vm,
+                    onOpenPuzzle = { id -> navController.navigate(Routes.puzzle(id)) },
+                    onOpenPositionEditor = { navController.navigate(Routes.POSITION_EDITOR) }
+                )
             }
 
             composable(Routes.SETUP) {
@@ -215,12 +241,15 @@ fun CoTuongAppRoot(container: AppContainer) {
                     factory = ResultViewModel.Factory(
                         gameId = gameId,
                         gameRepository = container.gameRepository,
-                        analysisService = container.analysisService
+                        analysisService = container.analysisService,
+                        trainingService = container.trainingService,
+                        puzzleRepository = container.puzzleRepository
                     )
                 )
                 ResultScreen(
                     viewModel = vm,
                     onAnalyzeGame = { id -> navController.navigate(Routes.analysis(id)) },
+                    onOpenPuzzle = { puzzleId -> navController.navigate(Routes.puzzle(puzzleId)) },
                     onPlayNewGame = {
                         navController.navigate(Routes.SETUP) {
                             popUpTo(Routes.HOME) { inclusive = false }
@@ -243,6 +272,7 @@ fun CoTuongAppRoot(container: AppContainer) {
                         gameId = gameId,
                         gameRepository = container.gameRepository,
                         analysisService = container.analysisService,
+                        trainingService = container.trainingService,
                         engineManager = container.engineManager,
                         settingsStore = container.settingsStore
                     )
@@ -253,11 +283,59 @@ fun CoTuongAppRoot(container: AppContainer) {
                 )
             }
 
+            composable(
+                route = Routes.PUZZLE,
+                arguments = listOf(navArgument("puzzleId") { type = NavType.LongType })
+            ) { entry ->
+                val puzzleId = entry.arguments?.getLong("puzzleId") ?: 0L
+                val vm: PuzzleViewModel = viewModel(
+                    key = "puzzle_$puzzleId",
+                    factory = PuzzleViewModel.Factory(
+                        puzzleId = puzzleId,
+                        puzzleRepository = container.puzzleRepository,
+                        gameRepository = container.gameRepository,
+                        trainingService = container.trainingService,
+                        engineManager = container.engineManager,
+                        settingsStore = container.settingsStore,
+                        soundEffectManager = container.soundEffectManager,
+                        hapticFeedbackManager = container.hapticFeedbackManager
+                    )
+                )
+                PuzzleScreen(
+                    viewModel = vm,
+                    onNavigateBack = { navController.popBackStack() },
+                    onPlayFromPosition = { newGameId ->
+                        navController.navigate(Routes.game(newGameId))
+                    }
+                )
+            }
+
+            composable(Routes.POSITION_EDITOR) {
+                val vm: PositionEditorViewModel = viewModel(
+                    factory = PositionEditorViewModel.Factory(
+                        gameRepository = container.gameRepository,
+                        trainingService = container.trainingService,
+                        engineManager = container.engineManager,
+                        settingsStore = container.settingsStore
+                    )
+                )
+                PositionEditorScreen(
+                    viewModel = vm,
+                    onNavigateBack = { navController.popBackStack() },
+                    onStartGameFromPosition = { newGameId ->
+                        navController.navigate(Routes.game(newGameId))
+                    }
+                )
+            }
+
             composable(Routes.SETTINGS) {
                 val vm: SettingsViewModel = viewModel(
                     factory = SettingsViewModel.Factory(
+                        appContext = container.appContext,
                         settingsStore = container.settingsStore,
                         gameRepository = container.gameRepository,
+                        puzzleRepository = container.puzzleRepository,
+                        backupService = container.backupService,
                         engineManager = container.engineManager,
                         soundEffectManager = container.soundEffectManager
                     )

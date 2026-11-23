@@ -9,10 +9,11 @@ import com.thanhvan.cotuongluyenky.domain.rules.XiangqiNotation
 
 /**
  * Generates concise, grounded Vietnamese commentary strictly from verified [TacticalFacts]
- * and [MoveClassification] (Sections 10.1, 12.1–12.5, 29).
+ * and [MoveClassification] (Sections 10.1, 12.1–12.5, 24.6, 29).
  *
- * Core safety rule: never assert a forced loss, double attack, or mate unless the corresponding
- * verified fact is true; otherwise emit an honest safe template referencing the illustration line.
+ * Core safety rule: never assert a forced loss, double attack (bắt đôi), cannon screen,
+ * horse block, or mate unless the corresponding verified fact is present; otherwise emit
+ * an honest safe template referencing the illustration line.
  */
 object CommentaryService {
 
@@ -49,6 +50,11 @@ object CommentaryService {
         // Priority 2: Classification-specific grounded statements
         return when (classification) {
             MoveClassification.GOOD -> when {
+                facts.playedMoveFork != null -> {
+                    val targetNames = facts.playedMoveFork.targets.take(2)
+                        .joinToString(" và ") { it.second.vietnameseName }
+                    "Nước đi tốt: ${facts.playedMoveFork.attackerType.vietnameseName} tạo thế bắt đôi nhắm vào $targetNames."
+                }
                 facts.playedMoveGaveCheck && facts.playedMoveCaptured != null ->
                     "Nước đi tốt: vừa bắt ${facts.playedMoveCaptured.vietnameseName} vừa chiếu Tướng, duy trì sức ép trực tiếp."
                 facts.playedMoveGaveCheck ->
@@ -67,6 +73,19 @@ object CommentaryService {
             }
 
             MoveClassification.INACCURACY -> when {
+                facts.bestMoveFork != null && bestNotation != null -> {
+                    val targetNames = facts.bestMoveFork.targets.take(2)
+                        .joinToString(" và ") { it.second.vietnameseName }
+                    "Nước đi chưa chính xác: bỏ lỡ phương án $bestNotation tạo thế bắt đôi ($targetNames)."
+                }
+                facts.cannonScreenEvent?.type == CannonScreenEventType.OWN_CANNON_LOST_SCREEN -> {
+                    val rec = if (bestNotation != null) " Engine đề xuất $bestNotation." else ""
+                    "Nước đi chưa chính xác: Pháo của bạn bị mất ngòi hướng vào ${facts.cannonScreenEvent.affectedTargetType.vietnameseName} đối thủ.$rec"
+                }
+                facts.playedHorseBlocked != null -> {
+                    val rec = if (bestNotation != null) " Engine đề xuất $bestNotation." else ""
+                    "Nước đi chưa chính xác: Mã di chuyển vào vị trí bị cản chân, tầm hoạt động hẹp.$rec"
+                }
                 facts.exposedOwnPieceAtRisk != null -> {
                     val pieceName = facts.exposedOwnPieceAtRisk.second.vietnameseName
                     val rec = if (bestNotation != null) " Engine đề xuất $bestNotation." else ""
@@ -89,10 +108,27 @@ object CommentaryService {
                     "Sai lầm"
                 }
                 when {
+                    facts.cannonScreenEvent?.type == CannonScreenEventType.OPPONENT_CANNON_GAINED_SCREEN_ON_VALUABLE -> {
+                        val rec = if (bestNotation != null) " Nên xem phương án $bestNotation." else ""
+                        "$severityLabel: nước đi vô tình tạo ngòi cho Pháo đối thủ uy hiếp ${facts.cannonScreenEvent.affectedTargetType.vietnameseName} của bạn.$rec"
+                    }
+                    facts.bestMoveFork != null && bestNotation != null -> {
+                        val targetNames = facts.bestMoveFork.targets.take(2)
+                            .joinToString(" và ") { it.second.vietnameseName }
+                        "$severityLabel: bỏ lỡ đòn bắt đôi với $bestNotation (đe dọa $targetNames). Hãy xem biến minh họa."
+                    }
                     facts.exposedOwnPieceAtRisk != null -> {
                         val pieceName = facts.exposedOwnPieceAtRisk.second.vietnameseName
                         val rec = if (bestNotation != null) " Nên xem phương án $bestNotation." else ""
                         "$severityLabel: sau nước này, $pieceName của bạn đang bị tấn công và có nguy cơ gặp bất lợi.$rec"
+                    }
+                    facts.cannonScreenEvent?.type == CannonScreenEventType.OWN_CANNON_LOST_SCREEN -> {
+                        val rec = if (bestNotation != null) " Engine đề xuất $bestNotation." else ""
+                        "$severityLabel: Pháo của bạn mất ngòi tấn công vào ${facts.cannonScreenEvent.affectedTargetType.vietnameseName}.$rec"
+                    }
+                    facts.playedHorseBlocked != null -> {
+                        val rec = if (bestNotation != null) " Engine đề xuất $bestNotation." else ""
+                        "$severityLabel: Mã bị cản chân nặng sau nước này (chỉ còn ${facts.playedHorseBlocked.legalMoveCount} nước đi).$rec"
                     }
                     facts.swingFromAdvantageToDisadvantage && bestNotation != null ->
                         "$severityLabel: nước đi làm mất lợi thế và chuyển sang thế bất lợi theo đánh giá engine. Engine đề xuất $bestNotation."
@@ -110,7 +146,7 @@ object CommentaryService {
     }
 
     /**
-     * Generates a Tier 1 Idea Hint strictly grounded in board facts (Section 10.1).
+     * Generates a Tier 1 Idea Hint strictly grounded in board facts (Section 10.1 & 15.4).
      */
     fun buildTier1IdeaHint(board: BoardState, bestMove: Move): String {
         if (!RulesEngine.isMoveLegal(board, bestMove)) {
@@ -120,6 +156,7 @@ object CommentaryService {
         val captured = board.pieceAt(bestMove.to)
         val afterBest = RulesEngine.applyMoveUnchecked(board, bestMove)
         val givesCheck = RulesEngine.isInCheck(afterBest, mover.opposite())
+        val fork = TacticalFactExtractor.detectFork(board, bestMove)
 
         val endangeredBefore = TacticalFactExtractor.analyzeDangerPieces(board, mover)
             .filter { it.level != DangerLevel.UNDER_ATTACK }
@@ -130,6 +167,8 @@ object CommentaryService {
             TacticalFactExtractor.findAttackersOf(afterBest, bestMove.to, mover.opposite()).isEmpty()
 
         return when {
+            fork != null ->
+                "Hãy tìm một đòn bắt đôi có thể đồng thời uy hiếp nhiều mục tiêu quan trọng."
             givesCheck && captured != null ->
                 "Hãy tìm một nước vừa chiếu Tướng vừa bắt quân để tạo sức ép lớn."
             givesCheck ->

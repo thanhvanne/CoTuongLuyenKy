@@ -16,11 +16,13 @@ import com.thanhvan.cotuongluyenky.core.ui.components.ChartPoint
 import com.thanhvan.cotuongluyenky.data.datastore.UserSettings
 import com.thanhvan.cotuongluyenky.data.datastore.UserSettingsStore
 import com.thanhvan.cotuongluyenky.data.repository.GameRepository
+import com.thanhvan.cotuongluyenky.data.repository.PuzzleTheme
 import com.thanhvan.cotuongluyenky.domain.analysis.AnalysisService
 import com.thanhvan.cotuongluyenky.domain.analysis.MoveClassification
 import com.thanhvan.cotuongluyenky.domain.analysis.PlyAnalysisModel
 import com.thanhvan.cotuongluyenky.domain.rules.FenCodec
 import com.thanhvan.cotuongluyenky.domain.rules.RulesEngine
+import com.thanhvan.cotuongluyenky.domain.training.TrainingService
 import com.thanhvan.cotuongluyenky.engine.api.EngineScore
 import com.thanhvan.cotuongluyenky.engine.api.SearchLimit
 import com.thanhvan.cotuongluyenky.engine.manager.EngineAnalysisOutcome
@@ -98,7 +100,8 @@ data class AnalysisUiState(
     val isAutoPlaying: Boolean = false,
     val playbackSpeed: PlaybackSpeed = PlaybackSpeed.NORMAL,
     val variationPreview: VariationPreviewState = VariationPreviewState(),
-    val tryOut: TryOutBranchState = TryOutBranchState()
+    val tryOut: TryOutBranchState = TryOutBranchState(),
+    val savedPuzzleMessage: String? = null
 ) {
     val totalPlies: Int get() = moves.size
 
@@ -271,6 +274,7 @@ class AnalysisViewModel(
     private val gameId: Long,
     private val gameRepository: GameRepository,
     private val analysisService: AnalysisService,
+    private val trainingService: TrainingService,
     private val engineManager: EngineManager,
     private val settingsStore: UserSettingsStore
 ) : ViewModel() {
@@ -687,6 +691,57 @@ class AnalysisViewModel(
         _uiState.update { it.copy(tryOut = TryOutBranchState()) }
     }
 
+    /**
+     * Saves the position BEFORE the selected move (or current board if ply 0) as a personal puzzle (Section 18.6).
+     */
+    fun saveCurrentPositionAsPuzzle() {
+        val state = _uiState.value
+        val record = state.selectedMoveRecord
+        val analysis = state.selectedPlyAnalysis
+        val targetBoard = if (record != null) {
+            state.boards.getOrElse(record.plyIndex) { state.boards.first() }
+        } else {
+            state.boards.first()
+        }
+        val historyUci = if (record != null) {
+            state.moves.take(record.plyIndex).map { it.move.toUci() }
+        } else emptyList()
+
+        viewModelScope.launch {
+            val accepted = listOfNotNull(analysis?.bestMove)
+            val variations = buildList {
+                if (analysis != null && analysis.principalVariation.isNotEmpty()) {
+                    add(analysis.principalVariation)
+                }
+                analysis?.variations?.forEach { v ->
+                    if (v.moves.isNotEmpty() && v.moves !in this) add(v.moves)
+                }
+            }
+            val moveTitle = if (record != null) {
+                "Thế cờ nước ${(record.plyIndex / 2) + 1} (Cấp ${state.engineLevel})"
+            } else {
+                "Thế cờ đã lưu từ ván #${state.gameId}"
+            }
+            trainingService.saveManualPuzzle(
+                board = targetBoard,
+                title = moveTitle,
+                theme = PuzzleTheme.MISTAKE_FIX,
+                acceptedMoves = accepted,
+                variations = variations,
+                commentary = analysis?.commentary ?: "Thế cờ lưu thủ công từ màn Phân tích ván.",
+                sourceGameId = state.gameId,
+                sourcePlyIndex = record?.plyIndex,
+                historyUci = historyUci,
+                playedMistakeMove = record?.move
+            )
+            _uiState.update { it.copy(savedPuzzleMessage = "Đã lưu thế cờ vào Bài tập đã lưu.") }
+        }
+    }
+
+    fun dismissSavedPuzzleMessage() {
+        _uiState.update { it.copy(savedPuzzleMessage = null) }
+    }
+
     override fun onCleared() {
         analysisJob?.cancel()
         autoPlayJob?.cancel()
@@ -698,6 +753,7 @@ class AnalysisViewModel(
         private val gameId: Long,
         private val gameRepository: GameRepository,
         private val analysisService: AnalysisService,
+        private val trainingService: TrainingService,
         private val engineManager: EngineManager,
         private val settingsStore: UserSettingsStore
     ) : ViewModelProvider.Factory {
@@ -707,6 +763,7 @@ class AnalysisViewModel(
                 gameId = gameId,
                 gameRepository = gameRepository,
                 analysisService = analysisService,
+                trainingService = trainingService,
                 engineManager = engineManager,
                 settingsStore = settingsStore
             ) as T

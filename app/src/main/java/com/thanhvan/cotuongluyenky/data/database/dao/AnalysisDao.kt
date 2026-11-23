@@ -34,6 +34,9 @@ interface AnalysisDao {
     @Query("UPDATE move_analysis SET isTurningPoint = :isTurningPoint WHERE gameId = :gameId AND plyIndex = :plyIndex")
     suspend fun setTurningPoint(gameId: Long, plyIndex: Int, isTurningPoint: Boolean)
 
+    @Query("SELECT * FROM move_analysis ORDER BY gameId ASC, plyIndex ASC")
+    suspend fun getAllAnalysisRaw(): List<MoveAnalysisEntity>
+
     @Query("DELETE FROM move_analysis WHERE gameId = :gameId AND plyIndex >= :fromPlyIndex")
     suspend fun deleteAnalysisFromPly(gameId: Long, fromPlyIndex: Int)
 

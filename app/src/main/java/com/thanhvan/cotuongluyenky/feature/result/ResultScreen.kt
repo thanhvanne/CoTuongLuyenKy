@@ -52,6 +52,7 @@ import com.thanhvan.cotuongluyenky.ui.theme.WarningAmber
 fun ResultScreen(
     viewModel: ResultViewModel,
     onAnalyzeGame: (Long) -> Unit,
+    onOpenPuzzle: (Long) -> Unit,
     onPlayNewGame: () -> Unit,
     onBackToHome: () -> Unit
 ) {
@@ -205,6 +206,28 @@ fun ResultScreen(
                         text = if (isAnalyzed) "Xem phân tích ván" else "Bắt đầu phân tích",
                         fontWeight = FontWeight.Bold
                     )
+                }
+                if (isAnalyzed && analysisSummary != null && (analysisSummary.blunders + analysisSummary.mistakes > 0)) {
+                    Spacer(Modifier.height(8.dp))
+                    OutlinedButton(
+                        onClick = {
+                            viewModel.openMistakePractice(
+                                onOpenPuzzle = onOpenPuzzle,
+                                onNoMistakeFound = { onAnalyzeGame(game.entity.id) }
+                            )
+                        },
+                        enabled = !state.isPreparingPuzzles,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(46.dp),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text(
+                            text = if (state.isPreparingPuzzles) "Đang tạo bài sửa sai..." else "Luyện lại lỗi từ ván này",
+                            color = InfoBlue,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
                 }
             }
 
