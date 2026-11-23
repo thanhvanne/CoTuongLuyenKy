@@ -23,6 +23,7 @@ import com.thanhvan.cotuongluyenky.domain.commentary.DangerLevel
 import com.thanhvan.cotuongluyenky.domain.commentary.PieceDangerInfo
 import com.thanhvan.cotuongluyenky.domain.commentary.TacticalFactExtractor
 import com.thanhvan.cotuongluyenky.domain.rules.FenCodec
+import com.thanhvan.cotuongluyenky.domain.rules.FenParseResult
 import com.thanhvan.cotuongluyenky.domain.rules.RulesEngine
 import com.thanhvan.cotuongluyenky.engine.api.EngineDifficulty
 import com.thanhvan.cotuongluyenky.engine.api.EngineScore
