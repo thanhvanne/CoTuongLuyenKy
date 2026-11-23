@@ -14,10 +14,13 @@ import com.thanhvan.cotuongluyenky.core.model.Side
 import com.thanhvan.cotuongluyenky.core.model.Square
 import androidx.room.withTransaction
 import com.thanhvan.cotuongluyenky.data.database.CoTuongDatabase
+import com.thanhvan.cotuongluyenky.data.database.dao.AnalysisDao
 import com.thanhvan.cotuongluyenky.data.database.dao.GameDao
 import com.thanhvan.cotuongluyenky.data.database.dao.GameWithMoveCount
 import com.thanhvan.cotuongluyenky.data.database.dao.MoveDao
+import com.thanhvan.cotuongluyenky.data.database.entity.AnalysisVariationEntity
 import com.thanhvan.cotuongluyenky.data.database.entity.GameEntity
+import com.thanhvan.cotuongluyenky.data.database.entity.MoveAnalysisEntity
 import com.thanhvan.cotuongluyenky.data.database.entity.MoveEntity
 import com.thanhvan.cotuongluyenky.domain.rules.FenCodec
 import com.thanhvan.cotuongluyenky.engine.api.EngineInfo
@@ -38,8 +41,10 @@ data class GameSummary(
     val status: GameStatus,
     val undoCount: Int,
     val hintCount: Int,
+    val dangerCheckCount: Int = 0,
     val analysisStatus: AnalysisStatus,
-    val moveCount: Int
+    val moveCount: Int,
+    val blunderCount: Int = 0
 ) {
     val playerWon: Boolean
         get() = (playerSide == Side.RED && result == GameResult.RED_WIN) ||
@@ -72,7 +77,8 @@ data class PlayerStatsSnapshot(
 class GameRepository(
     private val database: CoTuongDatabase,
     private val gameDao: GameDao = database.gameDao(),
-    private val moveDao: MoveDao = database.moveDao()
+    private val moveDao: MoveDao = database.moveDao(),
+    private val analysisDao: AnalysisDao = database.analysisDao()
 ) {
 
     fun observeLatestUnfinishedGame(): Flow<GameSummary?> =
@@ -199,6 +205,7 @@ class GameRepository(
         )
         database.withTransaction {
             moveDao.deleteMovesFromPly(gameId, fromPlyIndex)
+            analysisDao.deleteAnalysisFromPly(gameId, fromPlyIndex)
             gameDao.updateGame(updated)
         }
     }
@@ -248,6 +255,69 @@ class GameRepository(
         gameDao.deleteAllGames()
     }
 
+    suspend fun clearAllAnalysisCache() {
+        database.withTransaction {
+            analysisDao.deleteAllAnalysis()
+            gameDao.resetAllAnalysisStatuses(System.currentTimeMillis())
+        }
+    }
+
+    suspend fun incrementHintCount(gameId: Long) {
+        gameDao.incrementHintCount(gameId, System.currentTimeMillis())
+    }
+
+    suspend fun incrementDangerCheckCount(gameId: Long) {
+        gameDao.incrementDangerCheckCount(gameId, System.currentTimeMillis())
+    }
+
+    suspend fun updateAnalysisStatus(gameId: Long, status: AnalysisStatus) {
+        gameDao.updateAnalysisStatus(gameId, status.name, System.currentTimeMillis())
+    }
+
+    fun observeMoveAnalyses(gameId: Long): Flow<List<MoveAnalysisEntity>> =
+        analysisDao.observeAnalysisForGame(gameId)
+
+    suspend fun loadMoveAnalyses(gameId: Long): List<MoveAnalysisEntity> =
+        analysisDao.getAnalysisForGame(gameId)
+
+    suspend fun loadVariationsForAnalyses(analysisIds: List<Long>): Map<Long, List<AnalysisVariationEntity>> {
+        if (analysisIds.isEmpty()) return emptyMap()
+        return analysisDao.getVariationsForAnalyses(analysisIds).groupBy { it.analysisId }
+    }
+
+    suspend fun saveMoveAnalysis(
+        entity: MoveAnalysisEntity,
+        variations: List<AnalysisVariationEntity>
+    ): Long {
+        return database.withTransaction {
+            val id = analysisDao.upsertMoveAnalysis(entity)
+            analysisDao.deleteVariationsForAnalysis(id)
+            if (variations.isNotEmpty()) {
+                analysisDao.insertVariations(variations.map { it.copy(analysisId = id) })
+            }
+            id
+        }
+    }
+
+    suspend fun updateTurningPoints(gameId: Long, turningPointPlies: Set<Int>) {
+        database.withTransaction {
+            val existing = analysisDao.getAnalysisForGame(gameId)
+            for (row in existing) {
+                val shouldMark = row.plyIndex in turningPointPlies
+                if (row.isTurningPoint != shouldMark) {
+                    analysisDao.setTurningPoint(gameId, row.plyIndex, shouldMark)
+                }
+            }
+        }
+    }
+
+    suspend fun clearGameAnalysis(gameId: Long) {
+        database.withTransaction {
+            analysisDao.deleteAnalysisForGame(gameId)
+            gameDao.updateAnalysisStatus(gameId, AnalysisStatus.NOT_ANALYZED.name, System.currentTimeMillis())
+        }
+    }
+
     private fun GameWithMoveCount.toSummary(): GameSummary = GameSummary(
         id = id,
         createdAt = createdAt,
@@ -262,8 +332,10 @@ class GameRepository(
         status = enumOrDefault(status, GameStatus.IN_PROGRESS),
         undoCount = undoCount,
         hintCount = hintCount,
+        dangerCheckCount = dangerCheckCount,
         analysisStatus = enumOrDefault(analysisStatus, AnalysisStatus.NOT_ANALYZED),
-        moveCount = moveCount
+        moveCount = moveCount,
+        blunderCount = blunderCount
     )
 
     private fun MoveEntity.toDomainMoveRecord(): MoveRecord? {

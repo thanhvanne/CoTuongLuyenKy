@@ -76,6 +76,34 @@ class SettingsViewModel(
         settingsStore.setEngineResourceMode(mode)
     }
 
+    fun setLiveEvaluationEnabled(enabled: Boolean) = viewModelScope.launch {
+        settingsStore.setLiveEvaluationEnabled(enabled)
+    }
+
+    fun setShowEvalBar(enabled: Boolean) = viewModelScope.launch {
+        settingsStore.setShowEvalBar(enabled)
+    }
+
+    fun setOnlyWarnMajorBlunders(enabled: Boolean) = viewModelScope.launch {
+        settingsStore.setOnlyWarnMajorBlunders(enabled)
+    }
+
+    fun setShowGoodMoveEffects(enabled: Boolean) = viewModelScope.launch {
+        settingsStore.setShowGoodMoveEffects(enabled)
+    }
+
+    fun setVibrateOnBlunder(enabled: Boolean) = viewModelScope.launch {
+        settingsStore.setVibrateOnBlunder(enabled)
+    }
+
+    fun setHintsEnabled(enabled: Boolean) = viewModelScope.launch {
+        settingsStore.setHintsEnabled(enabled)
+    }
+
+    fun clearAnalysisCache() = viewModelScope.launch {
+        gameRepository.clearAllAnalysisCache()
+    }
+
     fun clearHistory() = viewModelScope.launch {
         gameRepository.clearAllHistory()
     }

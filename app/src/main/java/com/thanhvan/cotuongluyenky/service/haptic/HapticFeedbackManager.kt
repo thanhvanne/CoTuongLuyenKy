@@ -33,6 +33,13 @@ class HapticFeedbackManager(context: Context) {
         v.vibrate(VibrationEffect.createWaveform(longArrayOf(0L, 28L, 35L, 28L), intArrayOf(0, 120, 0, 120), -1))
     }
 
+    fun blunderBuzz(enabled: Boolean) {
+        if (!enabled) return
+        val v = vibrator ?: return
+        if (!v.hasVibrator()) return
+        v.vibrate(VibrationEffect.createOneShot(55L, 150))
+    }
+
     fun checkPulse(enabled: Boolean) {
         if (!enabled) return
         val v = vibrator ?: return

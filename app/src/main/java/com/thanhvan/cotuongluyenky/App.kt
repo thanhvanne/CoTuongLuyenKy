@@ -5,6 +5,7 @@ import android.content.Context
 import com.thanhvan.cotuongluyenky.data.database.CoTuongDatabase
 import com.thanhvan.cotuongluyenky.data.datastore.UserSettingsStore
 import com.thanhvan.cotuongluyenky.data.repository.GameRepository
+import com.thanhvan.cotuongluyenky.domain.analysis.AnalysisService
 import com.thanhvan.cotuongluyenky.engine.builtin.BuiltInXiangqiEngine
 import com.thanhvan.cotuongluyenky.engine.manager.EngineManager
 import com.thanhvan.cotuongluyenky.engine.nativebridge.PikafishProcessEngine
@@ -24,6 +25,11 @@ class AppContainer(context: Context) {
     val engineManager: EngineManager = EngineManager(
         primaryEngine = if (pikafishEngine.isAvailable()) pikafishEngine else null,
         fallbackEngine = builtInEngine
+    )
+
+    val analysisService: AnalysisService = AnalysisService(
+        engineManager = engineManager,
+        gameRepository = gameRepository
     )
 }
 
