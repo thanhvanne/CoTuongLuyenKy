@@ -397,9 +397,9 @@ fun PuzzleScreen(
                             Spacer(Modifier.width(4.dp))
                             Text("Đấu tiếp từ thế này", color = AccentEmerald, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        if (state.nextPuzzleId != null) {
+                        state.nextPuzzleId?.let { nextId ->
                             Button(
-                                onClick = { viewModel.loadPuzzle(state.nextPuzzleId) },
+                                onClick = { viewModel.loadPuzzle(nextId) },
                                 modifier = Modifier.weight(1f),
                                 shape = RoundedCornerShape(12.dp),
                                 colors = ButtonDefaults.buttonColors(containerColor = AccentEmerald)

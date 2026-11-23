@@ -103,7 +103,7 @@ class TrainingService(
                         val altFirst = v.moves.firstOrNull() ?: continue
                         if (altFirst == move || altFirst in this) continue
                         if (!RulesEngine.isMoveLegal(boardBefore, altFirst)) continue
-                        if (isEquivalentScore(mover, bestScoreRed, v.scoreRed)) {
+                        if (isEquivalentScore(mover, bestScoreRed, v.score)) {
                             add(altFirst)
                         }
                     }
@@ -154,7 +154,7 @@ class TrainingService(
                     solutionVariations = variations.joinToString("|") { line -> line.joinToString(" ") { it.toUci() } },
                     commentary = analysis.commentary,
                     engineVersion = analysis.engineVersion,
-                    analysisConfig = analysis.analysisConfig,
+                    analysisConfig = "depth=${analysis.depth}",
                     createdAt = System.currentTimeMillis()
                 )
                 val newId = puzzleRepository.insertGameMistakeIfNotExists(entity)
@@ -207,7 +207,7 @@ class TrainingService(
             legalAccepted
         } else {
             val outcome = engineManager.analyzePosition(
-                position = PositionWithHistory(fen, board, historyUci),
+                position = PositionWithHistory(fen, board, emptyList()),
                 limit = SearchLimit(moveTimeMs = 550L, maxDepth = 4),
                 variations = 2,
                 resourceMode = EngineResourceMode.BALANCED,
