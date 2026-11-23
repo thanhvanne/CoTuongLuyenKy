@@ -44,7 +44,11 @@ data class UserSettings(
     val onlyWarnMajorBlunders: Boolean = false,
     val showGoodMoveEffects: Boolean = true,
     val vibrateOnBlunder: Boolean = true,
-    val hintsEnabled: Boolean = true
+    val hintsEnabled: Boolean = true,
+    // Phase 4 settings (Sections 6.6, 18.11, 25.4)
+    val autoPowerThermalGuard: Boolean = true,
+    val advancedThreadsOverride: Int = 0, // 0 = Auto based on resourceMode
+    val advancedHashMbOverride: Int = 0   // 0 = Auto based on resourceMode
 )
 
 class UserSettingsStore(context: Context) {
@@ -70,6 +74,9 @@ class UserSettingsStore(context: Context) {
         val SHOW_GOOD_MOVE_EFFECTS = booleanPreferencesKey("show_good_move_effects")
         val VIBRATE_ON_BLUNDER = booleanPreferencesKey("vibrate_on_blunder")
         val HINTS_ENABLED = booleanPreferencesKey("hints_enabled")
+        val AUTO_POWER_THERMAL_GUARD = booleanPreferencesKey("auto_power_thermal_guard")
+        val ADVANCED_THREADS_OVERRIDE = intPreferencesKey("advanced_threads_override")
+        val ADVANCED_HASH_MB_OVERRIDE = intPreferencesKey("advanced_hash_mb_override")
     }
 
     val settingsFlow: Flow<UserSettings> = dataStore.data.map { prefs ->
@@ -92,7 +99,10 @@ class UserSettingsStore(context: Context) {
             onlyWarnMajorBlunders = prefs[Keys.ONLY_WARN_MAJOR_BLUNDERS] ?: false,
             showGoodMoveEffects = prefs[Keys.SHOW_GOOD_MOVE_EFFECTS] ?: true,
             vibrateOnBlunder = prefs[Keys.VIBRATE_ON_BLUNDER] ?: true,
-            hintsEnabled = prefs[Keys.HINTS_ENABLED] ?: true
+            hintsEnabled = prefs[Keys.HINTS_ENABLED] ?: true,
+            autoPowerThermalGuard = prefs[Keys.AUTO_POWER_THERMAL_GUARD] ?: true,
+            advancedThreadsOverride = (prefs[Keys.ADVANCED_THREADS_OVERRIDE] ?: 0).coerceIn(0, 4),
+            advancedHashMbOverride = (prefs[Keys.ADVANCED_HASH_MB_OVERRIDE] ?: 0).coerceIn(0, 128)
         )
     }
 
@@ -180,6 +190,18 @@ class UserSettingsStore(context: Context) {
 
     suspend fun setHintsEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.HINTS_ENABLED] = enabled }
+    }
+
+    suspend fun setAutoPowerThermalGuard(enabled: Boolean) {
+        dataStore.edit { it[Keys.AUTO_POWER_THERMAL_GUARD] = enabled }
+    }
+
+    suspend fun setAdvancedThreadsOverride(threads: Int) {
+        dataStore.edit { it[Keys.ADVANCED_THREADS_OVERRIDE] = threads.coerceIn(0, 4) }
+    }
+
+    suspend fun setAdvancedHashMbOverride(hashMb: Int) {
+        dataStore.edit { it[Keys.ADVANCED_HASH_MB_OVERRIDE] = hashMb.coerceIn(0, 128) }
     }
 
     private inline fun <reified T : Enum<T>> enumOrDefault(raw: String?, default: T): T {

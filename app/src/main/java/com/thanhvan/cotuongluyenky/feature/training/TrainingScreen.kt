@@ -358,6 +358,27 @@ private fun StatisticsOverviewCard(stats: TrainingStatistics) {
             Text(levelText, style = MaterialTheme.typography.bodyMedium, color = TextPrimary)
         }
 
+        // Reference Accuracy (Section 16.3: transparent, mode-separated, minimum sample guard)
+        stats.referenceAccuracy?.let { refAcc ->
+            if (refAcc.practiceReport != null || refAcc.challengeReport != null) {
+                HorizontalDivider(color = BorderSubtle, modifier = Modifier.padding(vertical = 8.dp))
+                Text("Độ chính xác tham khảo", style = MaterialTheme.typography.labelLarge, color = TextSecondary)
+                Spacer(Modifier.height(4.dp))
+                refAcc.practiceReport?.let { r ->
+                    StatLine("Luyện tập (${r.sampleMoves} nước)", "${r.scorePercent}%")
+                }
+                refAcc.challengeReport?.let { r ->
+                    StatLine("Thử sức (${r.sampleMoves} nước)", "${r.scorePercent}%")
+                }
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = refAcc.disclaimer,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = TextSecondary
+                )
+            }
+        }
+
         // Weak topics (Section 16.2: only display when enough verified data exists)
         HorizontalDivider(color = BorderSubtle, modifier = Modifier.padding(vertical = 8.dp))
         Text("Chủ đề cần chú ý", style = MaterialTheme.typography.labelLarge, color = TextSecondary)

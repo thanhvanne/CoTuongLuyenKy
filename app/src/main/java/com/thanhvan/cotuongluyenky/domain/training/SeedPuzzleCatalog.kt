@@ -271,6 +271,139 @@ object SeedPuzzleCatalog {
             acceptedMoves = listOf("b3e3"),
             solutionVariations = listOf(listOf("b3e3")),
             commentary = "Pháo bình vào trung lộ mượn Chốt làm ngòi chiếu bí: Tướng Đen không ăn được Chốt vì có Xe bảo vệ, hai Sĩ cũng không thể ăn Chốt vì vẫn để lộ mặt Pháo chiếu."
+        ),
+
+        // ==================== KHAI CUỘC MỞ RỘNG (PHASE 4) ====================
+        SeedPuzzleSpec(
+            catalogKey = "opening_same_direction_cannon",
+            sourceType = PuzzleSourceType.BUILTIN_OPENING,
+            theme = PuzzleTheme.OPENING,
+            title = "Thuận Pháo — Đen bình Pháo đối công trung lộ",
+            // After 1. h2e2 (Red Pháo 2 bình 5), Black responds h7e7 (Pháo 8 bình 5 - Thuận Pháo)
+            initialFen = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C2C4/9/RNBAKABNR b - - 0 1",
+            sideToMove = Side.BLACK,
+            acceptedMoves = listOf("h7e7"),
+            solutionVariations = listOf(listOf("h7e7", "h0g2", "h9g7", "i0h0")),
+            commentary = "Thuận Pháo (Pháo 8 bình 5 đối Pháo 2 bình 5) là một trong những bố cục đối công sắc bén lâu đời nhất, hai bên tranh giành tốc độ xuất Xe."
+        ),
+        SeedPuzzleSpec(
+            catalogKey = "opening_elephant_opening",
+            sourceType = PuzzleSourceType.BUILTIN_OPENING,
+            theme = PuzzleTheme.OPENING,
+            title = "Phi Tượng Cục — Củng cố trung lộ vững chắc",
+            initialFen = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1",
+            sideToMove = Side.RED,
+            acceptedMoves = listOf("g0e2", "c0e2"),
+            solutionVariations = listOf(
+                listOf("g0e2", "b7d7", "b0c2"),
+                listOf("c0e2", "h7f7", "h0g2")
+            ),
+            commentary = "Phi Tượng Cục (Tượng 3 tiến 5 hoặc Tượng 7 tiến 5) ưu tiên bảo vệ trung lộ, giữ thế trận mềm dẻo để chờ phản công theo nước ứng phó của đối thủ."
+        ),
+        SeedPuzzleSpec(
+            catalogKey = "opening_immortal_pointing_path",
+            sourceType = PuzzleSourceType.BUILTIN_OPENING,
+            theme = PuzzleTheme.OPENING,
+            title = "Tiên Nhân Chỉ Lộ — Thăm dò bằng Chốt 3 hoặc Chốt 7",
+            initialFen = "rnbakabnr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RNBAKABNR w - - 0 1",
+            sideToMove = Side.RED,
+            acceptedMoves = listOf("c3c4", "g3g4"),
+            solutionVariations = listOf(
+                listOf("c3c4", "c6c5", "b2c2"),
+                listOf("g3g4", "g6g5", "h2g2")
+            ),
+            commentary = "Tiên Nhân Chỉ Lộ (Binh 7 tiến 1 hoặc Binh 3 tiến 1) giúp thông đường Mã, thăm dò ý đồ đối thủ trước khi quyết định hướng tấn công chính."
+        ),
+
+        // ==================== TÀN CUỘC MỞ RỘNG (PHASE 4) ====================
+        SeedPuzzleSpec(
+            catalogKey = "endgame_horse_king_assist_mate",
+            sourceType = PuzzleSourceType.BUILTIN_ENDGAME,
+            theme = PuzzleTheme.ENDGAME,
+            title = "Tàn cuộc Mã trợ Tướng — Ngọa Tào Mã chiếu bí",
+            // Black King at d9 (3,9), Black Advisor at d8? No, Black Advisor at e8 (4,8).
+            // Red King at e0 (4,0) controls entire e-file (so Black King cannot step to e9!).
+            // Red Chariot at a8 (0,8) controls rank 8 (so Black King cannot step to d8!).
+            // Red Horse at b6 (1,6) -> moves to c7 (2,7)?? Wait: (1,6)->(2,7) is (+1,+1), not a horse move!
+            // Horse from d6 (3,6) -> c8 (2,8) via leg d7 (3,7) empty? Wait from c8 (2,8): (+2,+1) is e9, not d9!
+            // Horse checks d9 (3,9) from:
+            //   - b8 (1,8) with leg c8 (2,8) empty -> (+2, +1) = (3,9) = d9!
+            //   - f8 (5,8) with leg e8 (4,8) empty -> (-2, +1) = (3,9) = d9!
+            //   - c7 (2,7) with leg c8 (2,8) empty -> (+1, +2) = (3,9) = d9!
+            //   - e7 (4,7) with leg e8 (4,8) empty -> (-1, +2) = (3,9) = d9!
+            // Let's place:
+            // - Black King at d9 (3,9)
+            // - Red King at e0 (4,0) (controls e9, e8 — clear e-file!)
+            // - Red Chariot at a8 (0,8) (controls d8!) -> WAIT: if Red Horse lands on b8 (1,8), it would BLOCK Chariot a8!
+            //   Instead put Red Chariot at h8 (7,8) (controls d8 from the right — f8, g8, e8 empty!Wait: does h8 block Red King e0? NO, h8 is on file h, not file e!)
+            // - Red Horse at a6 (0,6) -> moves a6b8? Leg a7 (0,7) empty -> (0,6)->(1,8) = (+1,+2) VALID!
+            //   From b8 (1,8):
+            //   - Leg c8 (2,8) empty -> attacks d9 (3,9) = CHECK!
+            //   - Can Black King d9 capture b8? No!
+            //   - Can Black King d9 step to d8? Attacked by Red Chariot at h8 (since e8, f8, g8 empty)!
+            //   - Can Black King d9 step to e9? Faces Red King at e0 (e-file completely empty)!
+            //   - c9 is outside palace!
+            //   100% VERIFIED CLEAN MATE-IN-1!
+            // FEN: rank 9 = 3k5, rank 8 = 7R1 (h8), rank 7 = 9, rank 6 = N8 (a6), rank 5..1 = 9, rank 0 = 4K4
+            initialFen = "3k5/7R1/9/N8/9/9/9/9/9/4K4 w - - 0 1",
+            sideToMove = Side.RED,
+            acceptedMoves = listOf("a6b8"),
+            solutionVariations = listOf(listOf("a6b8")),
+            commentary = "Phối hợp tàn cuộc Mã – Xe – Tướng: Tướng Đỏ khóa lộ 5, Xe khống chế hàng 8 để Mã nhảy góc cung (Mã 9 tiến 8) chiếu bí dứt điểm."
+        ),
+        SeedPuzzleSpec(
+            catalogKey = "endgame_stalemate_trap_win",
+            sourceType = PuzzleSourceType.BUILTIN_ENDGAME,
+            theme = PuzzleTheme.ENDGAME,
+            title = "Tàn cuộc Khốn bí — Bắt hết nước đi hợp lệ của đối thủ",
+            // Classic Xiangqi Stalemate-Win (Khốn bí — in Xiangqi, stalemate is a WIN, not a draw!):
+            // Black King at d9 (3,9). Red King at e0 (4,0) controls e-file (e9 illegal!).
+            // Red Chariot at h7 (7,7) -> moves h7h8 (controlling rank 8, so d8 is illegal, WITHOUT giving check!).
+            // Wait: if Red moves h7h8, is Black King at d9 in check? NO (d9 is on rank 9, Chariot is on rank 8).
+            // Does Black have ANY legal move after h7h8?
+            // - d9 -> e9: ILLEGAL (facing Red King e0 on e-file!).
+            // - d9 -> d8: ILLEGAL (attacked by Red Chariot on h8!).
+            // - d9 -> c9: outside palace!
+            // Black has ZERO legal moves -> STALEMATE -> RED WINS immediately!
+            // (And note h7h9 is also checkmate! Let's prevent h7h9 by putting Red Soldier at h8? No, make h7h8 AND h7h9 both valid, or even cleaner: Red Soldier at d7 -> d7d8 is mate, OR Red Chariot at c6 -> c6c8? No, with Black King at d9, Red King at e0, Red Chariot at a7 -> a7a8 is stalemate AND a7a9 is checkmate! Wait: let's make a pure stalemate where checkmate isn't possible on rank 9: put Black Advisor at f9? No, put Red Soldier at e8? No, then e-file is blocked! Put Red Chariot at d5? No, d5 already checks d9! Put Red Chariot at c7 (2,7) -> c7c8: rank 8 controlled -> stalemate; c7c9 -> checkmate! Both are 1-move wins, so accept listOf("c7c8", "c7c9")!)
+            // Wait: even cooler pure stalemate: Black King at d9 (3,9), Red King at e0 (4,0), Red Horse at d6 (3,6)? No, Horse at b7 (1,7) controls d8!
+            // Put Black King at d9 (3,9), Red King at e0 (4,0), Red Horse at a5 (0,5) -> a5b7 (controls d8 via leg c7 empty, DOES NOT check d9!) -> PURE STALEMATE WIN (Khốn bí) with ONLY a single Horse + King!!
+            // LET'S VERIFY THAT!!
+            // - Black King at d9 (3,9)
+            // - Red King at e0 (4,0) -> controls e9!
+            // - Red Horse at a5 (0,5) -> moves a5b7 (file 0->1, rank 5->7 = (+1, +2), leg a6 empty!).
+            // - From b7 (1,7), Horse attacks d8 (3,8) via (+2, +1), leg c7 (2,7) empty!
+            // - Does Horse at b7 check d9 (3,9)? Distance is (+2, +2) -> NO!
+            // - Black King at d9 has ONLY two palace neighbors: e9 (facing Red King e0 -> ILLEGAL) and d8 (attacked by Horse b7 -> ILLEGAL)!
+            // - Black has ZERO legal moves -> PURE KHỐN BÍ (STALEMATE WIN) WITH SINGLE HORSE!
+            // FEN: rank 9 = 3k5, rank 8..6 = 9, rank 5 = N8 (a5), rank 4..1 = 9, rank 0 = 4K4
+            initialFen = "3k5/9/9/9/N8/9/9/9/9/4K4 w - - 0 1",
+            sideToMove = Side.RED,
+            acceptedMoves = listOf("a5b7"),
+            solutionVariations = listOf(listOf("a5b7")),
+            commentary = "Đòn Khốn bí đặc trưng của Cờ Tướng: trong luật Cờ Tướng, làm đối thủ không còn nước đi hợp lệ cũng là thắng! Mã nhảy b7 khóa ô d8 kết hợp mặt Tướng khóa e9."
+        ),
+        SeedPuzzleSpec(
+            catalogKey = "endgame_double_cannon_king_mate",
+            sourceType = PuzzleSourceType.BUILTIN_ENDGAME,
+            theme = PuzzleTheme.ENDGAME,
+            title = "Tàn cuộc Pháo Giác — Pháo kết hợp Tướng chiếu bí góc cung",
+            // Black King at d9 (3,9), Black Advisor at d7 (3,7)? No, put Black Advisor at e8 (4,8).
+            // Red King at e0 (4,0) -> e8 blocks facing, so Black King CAN'T move e9? Wait: e8 blocks facing so e9 is open unless attacked!
+            // Let's do classic Double Cannon + King mate on d-file:
+            // Black King at d9 (3,9), Red King at e0 (4,0) (controls e9 and e8!), Red Cannon 1 at d5 (3,5), Red Cannon 2 at a2 (0,2) -> a2d2!
+            // Check after a2d2:
+            // - Cannon d2 jumps over Cannon d5 to CHECK Black King d9!
+            // - Can Black King step to e9? ILLEGAL (facing Red King e0 on clear e-file!).
+            // - Can Black King step to d8? ILLEGAL (Cannon d2 STILL jumps over Cannon d5 to attack d8!).
+            // - c9 is outside palace!
+            // 100% VERIFIED PURE DOUBLE-CANNON ENDGAME MATE-IN-1!
+            // FEN: rank 9 = 3k5, rank 8..6 = 9, rank 5 = 3C5 (d5), rank 4..3 = 9, rank 2 = C8 (a2), rank 1 = 9, rank 0 = 4K4
+            initialFen = "3k5/9/9/9/3C5/9/9/C8/9/4K4 w - - 0 1",
+            sideToMove = Side.RED,
+            acceptedMoves = listOf("a2d2"),
+            solutionVariations = listOf(listOf("a2d2")),
+            commentary = "Song Pháo kết hợp mặt Tướng: Tướng Đỏ khóa cột e, Pháo sau bình vào cột d mượn Pháo trước làm ngòi tạo thế Trùng Pháo chiếu bí ngay lập tức."
         )
     )
 

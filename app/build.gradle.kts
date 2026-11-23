@@ -14,8 +14,8 @@ android {
         applicationId = "com.thanhvan.cotuongluyenky"
         minSdk = 29
         targetSdk = 37
-        versionCode = 3
-        versionName = "1.0.0-phase3"
+        versionCode = 4
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -26,6 +26,10 @@ android {
                 enable = true
                 packageScope = setOf("androidx.**", "kotlin.**", "kotlinx.**")
             }
+            proguardFiles(
+                getDefaultProguardFile("proguard-android-optimize.txt"),
+                "proguard-rules.pro"
+            )
         }
     }
     compileOptions {

@@ -10,6 +10,8 @@ import com.thanhvan.cotuongluyenky.data.repository.PuzzleItem
 import com.thanhvan.cotuongluyenky.data.repository.PuzzleRepository
 import com.thanhvan.cotuongluyenky.data.repository.PuzzleSourceType
 import com.thanhvan.cotuongluyenky.data.repository.PuzzleTheme
+import com.thanhvan.cotuongluyenky.domain.analysis.ReferenceAccuracyCalculator
+import com.thanhvan.cotuongluyenky.domain.analysis.ReferenceAccuracySummary
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 
@@ -50,7 +52,8 @@ data class TrainingStatistics(
     val puzzleCorrectRatePercent: Int? = null,
     val duePuzzlesCount: Int = 0,
     val weakTopics: List<WeakTopicInsight> = emptyList(),
-    val hasEnoughDataForWeakTopics: Boolean = false
+    val hasEnoughDataForWeakTopics: Boolean = false,
+    val referenceAccuracy: ReferenceAccuracySummary? = null
 )
 
 class StatisticsService(
@@ -67,7 +70,10 @@ class StatisticsService(
         gameRepository.observeAllGames(),
         puzzleRepository.observeAllPuzzles()
     ) { games, puzzles ->
-        compute(games, puzzles, System.currentTimeMillis())
+        val rawGames = gameRepository.getAllGamesWithRawMoves().map { it.first }
+        val rawAnalyses = gameRepository.getAllMoveAnalysesRaw()
+        val refAccuracy = ReferenceAccuracyCalculator.computeForGamesAndAnalyses(rawGames, rawAnalyses)
+        compute(games, puzzles, System.currentTimeMillis()).copy(referenceAccuracy = refAccuracy)
     }
 
     fun compute(

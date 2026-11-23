@@ -252,7 +252,8 @@ enum class GameResultReason(val vietnameseLabel: String) {
     DRAW_REPETITION("Hòa do lặp thế 3 lần"),
     DRAW_SIXTY_MOVE_RULE("Hòa theo luật 60 nước không ăn quân"),
     DRAW_INSUFFICIENT_MATERIAL("Hòa do không đủ lực chiếu bí"),
-    PERPETUAL_CHECK_LOSS("Xử thua do chiếu kéo dài (lặp 3 lần)")
+    PERPETUAL_CHECK_LOSS("Xử thua do chiếu kéo dài (lặp 3 lần)"),
+    PERPETUAL_CHASE_LOSS("Xử thua do đuổi quân kéo dài (lặp 3 lần)")
 }
 
 enum class GameStatus {

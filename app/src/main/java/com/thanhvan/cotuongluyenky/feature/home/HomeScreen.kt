@@ -218,6 +218,33 @@ fun HomeScreen(
             }
         }
 
+        // Card 2b: Optional Adaptive Difficulty Advisor (Máy vừa sức — Section 7.3)
+        state.difficultySuggestion?.let { suggestion ->
+            LuyenKyCard(
+                modifier = Modifier.fillMaxWidth(),
+                borderColor = AccentEmerald.copy(alpha = 0.55f)
+            ) {
+                Text(
+                    text = "Gợi ý Máy vừa sức (Cấp ${suggestion.currentLevel} → Cấp ${suggestion.suggestedLevel})",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = AccentEmerald
+                )
+                Spacer(Modifier.height(4.dp))
+                Text(
+                    text = suggestion.reason,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextSecondary
+                )
+                Spacer(Modifier.height(8.dp))
+                OutlinedButton(
+                    onClick = { viewModel.applySuggestedDifficulty(suggestion.suggestedLevel) },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Đặt mặc định Cấp ${suggestion.suggestedLevel}", color = AccentEmerald, fontWeight = FontWeight.SemiBold)
+                }
+            }
+        }
+
         // Card 3: Luyện hôm nay (Section 18.2)
         LuyenKyCard(
             modifier = Modifier.fillMaxWidth(),

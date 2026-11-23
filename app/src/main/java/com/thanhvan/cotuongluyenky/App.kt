@@ -14,6 +14,7 @@ import com.thanhvan.cotuongluyenky.engine.builtin.BuiltInXiangqiEngine
 import com.thanhvan.cotuongluyenky.engine.manager.EngineManager
 import com.thanhvan.cotuongluyenky.engine.nativebridge.PikafishProcessEngine
 import com.thanhvan.cotuongluyenky.service.haptic.HapticFeedbackManager
+import com.thanhvan.cotuongluyenky.service.power.DeviceThermalPowerMonitor
 import com.thanhvan.cotuongluyenky.service.sound.SoundEffectManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -28,13 +29,20 @@ class AppContainer(context: Context) {
     val settingsStore: UserSettingsStore = UserSettingsStore(appContext)
     val soundEffectManager: SoundEffectManager = SoundEffectManager(appContext)
     val hapticFeedbackManager: HapticFeedbackManager = HapticFeedbackManager(appContext)
+    val powerMonitor: DeviceThermalPowerMonitor = DeviceThermalPowerMonitor(appContext)
+
+    @Volatile
+    private var thermalGuardEnabled: Boolean = true
 
     private val pikafishEngine: PikafishProcessEngine = PikafishProcessEngine(appContext)
     private val builtInEngine: BuiltInXiangqiEngine = BuiltInXiangqiEngine()
 
     val engineManager: EngineManager = EngineManager(
         primaryEngine = if (pikafishEngine.isAvailable()) pikafishEngine else null,
-        fallbackEngine = builtInEngine
+        fallbackEngine = builtInEngine,
+        effectiveResourceResolver = { requested ->
+            powerMonitor.effectiveResourceMode(requested, autoGuardEnabled = thermalGuardEnabled)
+        }
     )
 
     val analysisService: AnalysisService = AnalysisService(
@@ -64,6 +72,15 @@ class AppContainer(context: Context) {
     init {
         appScope.launch {
             runCatching { trainingService.ensureCatalogSeeded() }
+        }
+        appScope.launch {
+            settingsStore.settingsFlow.collect { s ->
+                thermalGuardEnabled = s.autoPowerThermalGuard
+                engineManager.updateAdvancedOverrides(
+                    threads = s.advancedThreadsOverride,
+                    hashMb = s.advancedHashMbOverride
+                )
+            }
         }
     }
 }

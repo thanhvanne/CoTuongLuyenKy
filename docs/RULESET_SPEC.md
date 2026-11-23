@@ -21,12 +21,13 @@ Dựa trên quy chuẩn Liên đoàn Cờ Tướng Thế Giới (WXF) / Liên đ
    - **Luật 60 nước không ăn quân (`DRAW_SIXTY_MOVE_RULE`)**: 120 nửa lượt liên tiếp (`halfMoveClock >= 120`) không có quân bị ăn → **hòa**.
    - **Không đủ lực chiếu bí (`DRAW_INSUFFICIENT_MATERIAL`)**: cả hai bên không còn Xe, Pháo, Mã hoặc Tốt → **hòa**.
    - **Xin thua (`RESIGNATION`)**, **Hết giờ (`TIMEOUT`)**.
-4. **Xử lý lặp thế & chiếu kéo dài (phạm vi Phase 1)**:
+4. **Xử lý lặp thế, chiếu kéo dài & đuổi quân kéo dài (Phase 4)**:
    - Mỗi thế cờ được định danh bằng khóa Zobrist 64-bit (`positionHash`, bao gồm vị trí tất cả quân và bên đi).
    - Khi một `positionHash` lặp lại lần thứ 3 trong ván:
-     - Nếu bên vừa tạo ra thế lặp đã **chiếu liên tục** tất cả các nước của họ trong chu kỳ lặp → xử thua do **Chiếu kéo dài (`PERPETUAL_CHECK_LOSS`)**.
-     - Ngược lại trong Phase 1 → xử **Hòa do lặp thế (`DRAW_REPETITION`)**.
-   - **Giới hạn ghi nhận rõ (theo Mục 26 Phase 1)**: Các quy tắc phân xử **đuổi quân kéo dài (trường tróc / perpetual chase)** tinh vi theo WXF/luật Trung Quốc (phân biệt quân có gốc/không gốc, Tốt chưa qua sông, v.v.) **chưa tuyên bố hỗ trợ đầy đủ ở Phase 1** và sẽ được hoàn thiện ở Phase 4.
+     - **Chiếu kéo dài (`PERPETUAL_CHECK_LOSS`)**: Nếu chỉ một bên chiếu liên tục trong toàn bộ chu kỳ lặp → bên chiếu kéo dài bị xử thua.
+     - **Đuổi quân kéo dài (`PERPETUAL_CHASE_LOSS`)**: Nếu không phải chiếu kéo dài và chỉ một bên dùng quân không phải Tướng/Tốt liên tục đe dọa ăn hợp lệ quân không được bảo vệ (hoặc bị quân giá trị nhỏ hơn đuổi, loại trừ Tướng và Tốt chưa qua sông) của đối thủ trong toàn bộ chu kỳ lặp, còn đối thủ chỉ chạy trốn → bên đuổi kéo dài bị xử thua.
+     - **Hòa lặp thế (`DRAW_REPETITION`)**: Khi cả hai bên cùng chiếu/cùng đuổi hoặc không vi phạm đơn phương → xử Hòa.
+   - **Ghi chú minh bạch**: Các ngoại lệ trường tróc siêu phức tạp (như phối hợp tróc gián tiếp qua nhiều lớp đổi quân ở giải chuyên nghiệp) vẫn được ưu tiên xử Hòa an toàn thay vì phán thua sai.
 
 ## 2. Quy ước FEN (`FenCodec`)
 
