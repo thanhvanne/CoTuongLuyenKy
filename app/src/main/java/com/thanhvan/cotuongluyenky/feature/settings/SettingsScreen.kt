@@ -74,9 +74,12 @@ fun SettingsScreen(
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val backupState by viewModel.backupState.collectAsStateWithLifecycle()
     val engineInfo = viewModel.engineInfo
+    val powerSnapshot = remember(settings.autoPowerThermalGuard) { viewModel.devicePowerSnapshot }
+    val maxSafeThreads = remember { viewModel.maxSafeThreads }
     val context = LocalContext.current
     var showClearDialog by remember { mutableStateOf(false) }
     var showClearPuzzlesDialog by remember { mutableStateOf(false) }
+    var showLicensesDialog by remember { mutableStateOf(false) }
 
     // System file pickers for JSON Export / Import (Section 20.9 & 23.3 — no storage permissions needed)
     val exportLauncher = rememberLauncherForActivityResult(
@@ -373,9 +376,9 @@ fun SettingsScreen(
                 )
             }
 
-            // Engine resource mode
+            // Engine resource mode & thermal/battery guard (Sections 6.6 & 18.11)
             LuyenKyCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Tài nguyên máy cờ", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                Text("Tài nguyên máy cờ & Pin / Nhiệt độ", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     EngineResourceMode.entries.forEach { mode ->
@@ -393,6 +396,52 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodyMedium,
                     color = TextSecondary
                 )
+                Spacer(Modifier.height(8.dp))
+                SettingsToggleRow(
+                    title = "Tự hạ tải khi máy nóng / pin yếu",
+                    checked = settings.autoPowerThermalGuard,
+                    onCheckedChange = { viewModel.setAutoPowerThermalGuard(it) }
+                )
+                Text(
+                    text = if (powerSnapshot.shouldThrottle) {
+                        "Đang kích hoạt bảo vệ: ${powerSnapshot.throttleReason ?: "Thiết bị đang tiết kiệm pin / nhiệt cao"}."
+                    } else {
+                        val bat = if (powerSnapshot.batteryPercent >= 0) "${powerSnapshot.batteryPercent}%" else "Không rõ"
+                        "Trạng thái thiết bị: Bình thường (Pin $bat · Tối đa $maxSafeThreads luồng an toàn)."
+                    },
+                    style = MaterialTheme.typography.labelMedium,
+                    color = if (powerSnapshot.shouldThrottle) WarningAmber else TextSecondary
+                )
+
+                HorizontalDivider(color = BorderSubtle, modifier = Modifier.padding(vertical = 10.dp))
+                Text("Tùy chỉnh nâng cao (Engine)", style = MaterialTheme.typography.labelLarge, color = TextPrimary)
+                Spacer(Modifier.height(6.dp))
+                Text("Số luồng CPU", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(4.dp))
+                val threadOptions = listOf(0, 1, 2, 4).filter { it == 0 || it <= maxSafeThreads }
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    threadOptions.forEach { t ->
+                        FilterChip(
+                            selected = settings.advancedThreadsOverride == t,
+                            onClick = { viewModel.setAdvancedThreadsOverride(t) },
+                            label = { Text(if (t == 0) "Tự động" else "$t luồng") },
+                            colors = settingsChipColors()
+                        )
+                    }
+                }
+                Spacer(Modifier.height(8.dp))
+                Text("Bộ nhớ Hash", style = MaterialTheme.typography.labelMedium, color = TextSecondary)
+                Spacer(Modifier.height(4.dp))
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    listOf(0, 16, 32, 64).forEach { hash ->
+                        FilterChip(
+                            selected = settings.advancedHashMbOverride == hash,
+                            onClick = { viewModel.setAdvancedHashMbOverride(hash) },
+                            label = { Text(if (hash == 0) "Tự động" else "$hash MB") },
+                            colors = settingsChipColors()
+                        )
+                    }
+                }
             }
 
             // Local data & Export/Import (Section 18.11 & 20.9)
@@ -450,22 +499,67 @@ fun SettingsScreen(
                 }
             }
 
-            // About & Licenses (Section 4.3 & 18.11)
+            // About & Licenses (Section 4.3, 18.11 & 25.5)
             LuyenKyCard(modifier = Modifier.fillMaxWidth()) {
-                Text("Thông tin & Giấy phép", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
+                Text("Thông tin, Quyền riêng tư & Giấy phép", style = MaterialTheme.typography.titleMedium, color = TextPrimary)
                 Spacer(Modifier.height(8.dp))
                 InfoLine("Ứng dụng", "Cờ Tướng – Luyện Kỳ v${BuildConfig.VERSION_NAME}")
                 InfoLine("Bộ luật", RulesetId.WXF_BASIC_V1.displayName)
                 InfoLine("Engine đang dùng", "${engineInfo.name} (${engineInfo.version})")
+                InfoLine("Mạng & Dữ liệu", "100% Offline · Không quảng cáo · Không theo dõi")
                 HorizontalDivider(color = BorderSubtle, modifier = Modifier.padding(vertical = 8.dp))
                 Text(
-                    text = "Thành phần nguồn mở dự kiến tích hợp: Pikafish (https://github.com/official-pikafish/Pikafish) theo giấy phép GNU GPL-3.0. Hiệu ứng âm thanh được tổng hợp nội bộ, không sử dụng tài nguyên bản quyền bên thứ ba.",
+                    text = "Ứng dụng không yêu cầu quyền Internet, không tạo tài khoản và không gửi dữ liệu ra ngoài thiết bị. Thành phần nguồn mở tích hợp tùy chọn: Pikafish (GNU GPL-3.0).",
                     style = MaterialTheme.typography.labelMedium,
                     color = TextSecondary
                 )
+                Spacer(Modifier.height(10.dp))
+                OutlinedButton(
+                    onClick = { showLicensesDialog = true },
+                    shape = RoundedCornerShape(10.dp)
+                ) {
+                    Text("Xem giấy phép nguồn mở & Cam kết riêng tư", color = InfoBlue)
+                }
             }
             Spacer(Modifier.height(8.dp))
         }
+    }
+
+    if (showLicensesDialog) {
+        AlertDialog(
+            onDismissRequest = { showLicensesDialog = false },
+            containerColor = BgCardElevated,
+            title = { Text("Giấy phép nguồn mở & Riêng tư", color = TextPrimary) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(
+                        text = "• Quyền riêng tư (Offline-first): Cờ Tướng – Luyện Kỳ không khai báo quyền INTERNET, không gắn SDK quảng cáo/theo dõi, mọi ván đấu và thống kê chỉ lưu cục bộ bằng Room & DataStore.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                    Text(
+                        text = "• Pikafish Xiangqi Engine (tích hợp native tùy chọn): Phát hành theo giấy phép GNU General Public License v3.0 (GPL-3.0). Nguồn: https://github.com/official-pikafish/Pikafish",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                    Text(
+                        text = "• Thư viện AndroidX (Compose, Room, DataStore, Navigation) & Kotlin Coroutines: Giấy phép Apache License 2.0.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                    Text(
+                        text = "• Hiệu ứng âm thanh (WAV) & bàn cờ Vector Canvas: Tổng hợp nội bộ trong dự án, không sử dụng tài nguyên bản quyền bên thứ ba.",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = TextSecondary
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showLicensesDialog = false }) {
+                    Text("Đóng", color = AccentEmerald)
+                }
+            }
+        )
     }
 }
 

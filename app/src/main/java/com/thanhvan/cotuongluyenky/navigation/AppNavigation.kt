@@ -1,5 +1,10 @@
 package com.thanhvan.cotuongluyenky.navigation
 
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -18,6 +23,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.NavType
@@ -27,6 +33,8 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
 import com.thanhvan.cotuongluyenky.AppContainer
+import com.thanhvan.cotuongluyenky.core.ui.accessibility.rememberEffectiveReduceMotion
+import com.thanhvan.cotuongluyenky.data.datastore.UserSettings
 import com.thanhvan.cotuongluyenky.feature.analysis.AnalysisScreen
 import com.thanhvan.cotuongluyenky.feature.analysis.AnalysisViewModel
 import com.thanhvan.cotuongluyenky.feature.game.GameScreen
@@ -85,6 +93,8 @@ fun CoTuongAppRoot(container: AppContainer) {
     val navController = rememberNavController()
     val backStackEntry by navController.currentBackStackEntryAsState()
     val currentRoute = backStackEntry?.destination?.route
+    val settings by container.settingsStore.settingsFlow.collectAsStateWithLifecycle(initialValue = UserSettings())
+    val effectiveReduceMotion = rememberEffectiveReduceMotion(settings.reduceMotion)
 
     val showBottomBar = currentRoute in setOf(Routes.HOME, Routes.HISTORY, Routes.TRAINING)
 
@@ -128,7 +138,19 @@ fun CoTuongAppRoot(container: AppContainer) {
             startDestination = Routes.HOME,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(if (showBottomBar) innerPadding else PaddingValues(0.dp))
+                .padding(if (showBottomBar) innerPadding else PaddingValues(0.dp)),
+            enterTransition = {
+                if (effectiveReduceMotion) EnterTransition.None else fadeIn(tween(180))
+            },
+            exitTransition = {
+                if (effectiveReduceMotion) ExitTransition.None else fadeOut(tween(140))
+            },
+            popEnterTransition = {
+                if (effectiveReduceMotion) EnterTransition.None else fadeIn(tween(180))
+            },
+            popExitTransition = {
+                if (effectiveReduceMotion) ExitTransition.None else fadeOut(tween(140))
+            }
         ) {
             composable(Routes.HOME) {
                 val vm: HomeViewModel = viewModel(
@@ -337,7 +359,8 @@ fun CoTuongAppRoot(container: AppContainer) {
                         puzzleRepository = container.puzzleRepository,
                         backupService = container.backupService,
                         engineManager = container.engineManager,
-                        soundEffectManager = container.soundEffectManager
+                        soundEffectManager = container.soundEffectManager,
+                        powerMonitor = container.powerMonitor
                     )
                 )
                 SettingsScreen(

@@ -32,6 +32,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.thanhvan.cotuongluyenky.core.model.BoardState
 import com.thanhvan.cotuongluyenky.core.model.BoardThemeStyle
@@ -40,6 +42,7 @@ import com.thanhvan.cotuongluyenky.core.model.Piece
 import com.thanhvan.cotuongluyenky.core.model.PieceDisplayStyle
 import com.thanhvan.cotuongluyenky.core.model.Side
 import com.thanhvan.cotuongluyenky.core.model.Square
+import com.thanhvan.cotuongluyenky.core.ui.accessibility.rememberEffectiveReduceMotion
 import com.thanhvan.cotuongluyenky.domain.analysis.MoveClassification
 import com.thanhvan.cotuongluyenky.domain.commentary.DangerLevel
 import com.thanhvan.cotuongluyenky.ui.theme.AccentEmerald
@@ -123,10 +126,11 @@ fun XiangqiBoard(
     onSquareTapped: (Square) -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val effectiveReduceMotion = rememberEffectiveReduceMotion(reduceMotion)
     val animProgress = remember { Animatable(1f) }
 
-    LaunchedEffect(animationEvent?.id, reduceMotion) {
-        if (animationEvent != null && !reduceMotion) {
+    LaunchedEffect(animationEvent?.id, effectiveReduceMotion) {
+        if (animationEvent != null && !effectiveReduceMotion) {
             animProgress.snapTo(0f)
             animProgress.animateTo(
                 targetValue = 1f,
@@ -138,6 +142,11 @@ fun XiangqiBoard(
     }
 
     val frameColor = if (boardThemeStyle == BoardThemeStyle.CLASSIC_WOOD) WoodFrame else MinimalFrame
+    val boardAccessibilityDesc = buildString {
+        append("Bàn cờ tướng, lượt ${board.sideToMove.vietnameseName} đi")
+        if (checkedSide != null) append(", ${checkedSide.vietnameseName} đang bị chiếu")
+        if (selectedSquare != null) append(", đang chọn ô ${selectedSquare.toUci()} với ${legalTargets.size} nước hợp lệ")
+    }
 
     Box(
         modifier = modifier
@@ -146,6 +155,7 @@ fun XiangqiBoard(
             .background(frameColor)
             .border(1.5.dp, Color(0x33FFFFFF), RoundedCornerShape(14.dp))
             .padding(6.dp)
+            .semantics { contentDescription = boardAccessibilityDesc }
     ) {
         Canvas(
             modifier = Modifier

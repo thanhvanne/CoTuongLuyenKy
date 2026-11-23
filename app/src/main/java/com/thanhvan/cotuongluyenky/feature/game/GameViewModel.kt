@@ -367,10 +367,12 @@ class GameViewModel(
         )
 
         val updatedMoves = movesBefore + record
+        val initialBoard = (FenCodec.parse(state.initialFen) as? FenParseResult.Success)?.board
         val terminal = RulesEngine.evaluateTerminalState(
             board = applied.newBoard,
             history = updatedMoves,
-            initialPositionHash = state.initialPositionHash
+            initialPositionHash = state.initialPositionHash,
+            initialBoard = initialBoard
         )
 
         val checkedSide = if (applied.gaveCheck) applied.newBoard.sideToMove else null

@@ -9,12 +9,15 @@ import com.thanhvan.cotuongluyenky.data.repository.GameRepository
 import com.thanhvan.cotuongluyenky.data.repository.GameSummary
 import com.thanhvan.cotuongluyenky.data.repository.PlayerStatsSnapshot
 import com.thanhvan.cotuongluyenky.data.repository.PuzzleRepository
+import com.thanhvan.cotuongluyenky.domain.training.AdaptiveDifficultyAdvisor
+import com.thanhvan.cotuongluyenky.domain.training.AdaptiveDifficultySuggestion
 import com.thanhvan.cotuongluyenky.engine.api.EngineInfo
 import com.thanhvan.cotuongluyenky.engine.manager.EngineManager
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 
 data class HomeUiState(
     val settings: UserSettings = UserSettings(),
@@ -23,13 +26,14 @@ data class HomeUiState(
     val duePuzzlesCount: Int = 0,
     val solvedPuzzlesCount: Int = 0,
     val nextDuePuzzleId: Long? = null,
+    val difficultySuggestion: AdaptiveDifficultySuggestion? = null,
     val engineInfo: EngineInfo = EngineInfo("Luyện Kỳ Core", "1.0.0", false)
 )
 
 class HomeViewModel(
     gameRepository: GameRepository,
     puzzleRepository: PuzzleRepository,
-    settingsStore: UserSettingsStore,
+    private val settingsStore: UserSettingsStore,
     engineManager: EngineManager
 ) : ViewModel() {
 
@@ -37,10 +41,12 @@ class HomeViewModel(
         settingsStore.settingsFlow,
         gameRepository.observeLatestUnfinishedGame(),
         gameRepository.observePlayerStats(),
-        puzzleRepository.observeAllPuzzles()
-    ) { settings, unfinished, stats, puzzles ->
+        puzzleRepository.observeAllPuzzles(),
+        gameRepository.observeAllGames()
+    ) { settings, unfinished, stats, puzzles, allGames ->
         val now = System.currentTimeMillis()
         val due = puzzles.filter { it.isDueAt(now) }.sortedBy { it.nextReviewAt }
+        val suggestion = AdaptiveDifficultyAdvisor.suggest(allGames, settings.defaultEngineLevel)
         HomeUiState(
             settings = settings,
             unfinishedGame = unfinished,
@@ -48,6 +54,7 @@ class HomeViewModel(
             duePuzzlesCount = due.size,
             solvedPuzzlesCount = puzzles.count { it.isSolved },
             nextDuePuzzleId = due.firstOrNull()?.id ?: puzzles.firstOrNull()?.id,
+            difficultySuggestion = suggestion,
             engineInfo = engineManager.activeEngineInfo
         )
     }.stateIn(
@@ -55,6 +62,12 @@ class HomeViewModel(
         started = SharingStarted.WhileSubscribed(5_000),
         initialValue = HomeUiState(engineInfo = engineManager.activeEngineInfo)
     )
+
+    fun applySuggestedDifficulty(level: Int) {
+        viewModelScope.launch {
+            settingsStore.setDefaultEngineLevel(level)
+        }
+    }
 
     class Factory(
         private val gameRepository: GameRepository,

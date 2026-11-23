@@ -342,7 +342,8 @@ object RulesEngine {
     fun evaluateTerminalState(
         board: BoardState,
         history: List<MoveRecord>,
-        initialPositionHash: Long
+        initialPositionHash: Long,
+        initialBoard: BoardState? = null
     ): TerminalEvaluation {
         // 1. No legal moves -> Checkmate or Stalemate (both lose in Xiangqi!)
         if (!hasAnyLegalMove(board)) {
@@ -355,7 +356,7 @@ object RulesEngine {
             return TerminalEvaluation(winner, reason)
         }
 
-        // 2. Threefold position repetition & perpetual check detection
+        // 2. Threefold position repetition, perpetual check & perpetual chase detection (WXF)
         val currentHash = board.positionHash
         val occurrencePlyIndices = mutableListOf<Int>()
         if (initialPositionHash == currentHash) {
@@ -382,17 +383,33 @@ object RulesEngine {
             val opponentPerpetualCheck = opponentMovesInCycle.isNotEmpty() &&
                 opponentMovesInCycle.all { it.gaveCheck }
 
-            return when {
-                repeatingSidePerpetualCheck && !opponentPerpetualCheck -> {
-                    val winner = if (repeatingSide == Side.RED) GameResult.BLACK_WIN else GameResult.RED_WIN
-                    TerminalEvaluation(winner, GameResultReason.PERPETUAL_CHECK_LOSS)
-                }
-                opponentPerpetualCheck && !repeatingSidePerpetualCheck -> {
-                    val winner = if (opponentSide == Side.RED) GameResult.BLACK_WIN else GameResult.RED_WIN
-                    TerminalEvaluation(winner, GameResultReason.PERPETUAL_CHECK_LOSS)
-                }
-                else -> TerminalEvaluation(GameResult.DRAW, GameResultReason.DRAW_REPETITION)
+            if (repeatingSidePerpetualCheck && !opponentPerpetualCheck) {
+                val winner = if (repeatingSide == Side.RED) GameResult.BLACK_WIN else GameResult.RED_WIN
+                return TerminalEvaluation(winner, GameResultReason.PERPETUAL_CHECK_LOSS)
             }
+            if (opponentPerpetualCheck && !repeatingSidePerpetualCheck) {
+                val winner = if (opponentSide == Side.RED) GameResult.BLACK_WIN else GameResult.RED_WIN
+                return TerminalEvaluation(winner, GameResultReason.PERPETUAL_CHECK_LOSS)
+            }
+
+            // Phase 4: Unilateral perpetual chase adjudication (Tróc tử kéo dài) when initialBoard is available
+            if (initialBoard != null && !repeatingSidePerpetualCheck && !opponentPerpetualCheck) {
+                val cycleSteps = replayCycleSteps(initialBoard, history, cycleStartIndex)
+                if (cycleSteps.isNotEmpty()) {
+                    val repeatingChases = isPerpetualChasingInCycle(repeatingSide, cycleSteps)
+                    val opponentChases = isPerpetualChasingInCycle(opponentSide, cycleSteps)
+                    if (repeatingChases && !opponentChases) {
+                        val winner = if (repeatingSide == Side.RED) GameResult.BLACK_WIN else GameResult.RED_WIN
+                        return TerminalEvaluation(winner, GameResultReason.PERPETUAL_CHASE_LOSS)
+                    }
+                    if (opponentChases && !repeatingChases) {
+                        val winner = if (opponentSide == Side.RED) GameResult.BLACK_WIN else GameResult.RED_WIN
+                        return TerminalEvaluation(winner, GameResultReason.PERPETUAL_CHASE_LOSS)
+                    }
+                }
+            }
+
+            return TerminalEvaluation(GameResult.DRAW, GameResultReason.DRAW_REPETITION)
         }
 
         // 3. 60-move no-capture rule (120 plies)
@@ -455,7 +472,7 @@ object RulesEngine {
             current = applied.newBoard
         }
 
-        val terminal = evaluateTerminalState(current, records, initialBoard.positionHash)
+        val terminal = evaluateTerminalState(current, records, initialBoard.positionHash, initialBoard)
         return Result.success(
             ReconstructedGame(
                 initialBoard = initialBoard,
@@ -464,6 +481,101 @@ object RulesEngine {
                 terminal = terminal
             )
         )
+    }
+
+    private data class CycleStep(
+        val side: Side,
+        val move: Move,
+        val boardAfter: BoardState
+    )
+
+    private fun replayCycleSteps(
+        initialBoard: BoardState,
+        history: List<MoveRecord>,
+        cycleStartIndex: Int
+    ): List<CycleStep> {
+        var current = initialBoard
+        val result = mutableListOf<CycleStep>()
+        for (i in history.indices) {
+            val rec = history[i]
+            if (!isMoveLegal(current, rec.move)) return emptyList()
+            val after = applyMoveUnchecked(current, rec.move)
+            if (i >= cycleStartIndex) {
+                result.add(CycleStep(side = rec.side, move = rec.move, boardAfter = after))
+            }
+            current = after
+        }
+        return result
+    }
+
+    /**
+     * WXF unilateral perpetual-chase adjudication (Phase 4):
+     * A side is perpetually chasing if on EVERY one of its moves in the repetition cycle (>= 2 moves),
+     * it uses a non-General, non-Soldier piece to create a legal threat against at least one eligible
+     * enemy piece (not General, not uncrossed Soldier) that is undefended or attacked by a lower-value piece.
+     */
+    private fun isPerpetualChasingInCycle(side: Side, cycleSteps: List<CycleStep>): Boolean {
+        val ownSteps = cycleSteps.filter { it.side == side }
+        if (ownSteps.size < 2) return false
+
+        val enemy = side.opposite()
+        var commonChasedTypes: Set<PieceType>? = null
+
+        for (step in ownSteps) {
+            val movedPiece = step.boardAfter.pieceAt(step.move.to) ?: return false
+            if (movedPiece.type == PieceType.GENERAL || movedPiece.type == PieceType.SOLDIER) {
+                return false
+            }
+
+            val probeCopy = step.boardAfter.copyArray()
+            val sideProbe = BoardState.create(
+                squares = probeCopy,
+                sideToMove = side,
+                halfMoveClock = step.boardAfter.halfMoveClock,
+                fullMoveNumber = step.boardAfter.fullMoveNumber,
+                positionHash = ZobristHash.computeHash(probeCopy, side)
+            )
+
+            val chasedOnThisStep = mutableSetOf<PieceType>()
+            for ((targetSq, targetPiece) in sideProbe.allPieces(enemy)) {
+                if (targetPiece.type == PieceType.GENERAL) continue
+                if (targetPiece.type == PieceType.SOLDIER && !targetSq.hasCrossedRiver(enemy)) continue
+                if (!isMoveLegal(sideProbe, Move(step.move.to, targetSq))) continue
+
+                val isLowerValueAttacker = movedPiece.type.baseMaterialValue < targetPiece.type.baseMaterialValue
+                val hasEnemyDefender = hasLegalDefender(step.boardAfter, targetSq, enemy)
+                if (!hasEnemyDefender || isLowerValueAttacker) {
+                    chasedOnThisStep.add(targetPiece.type)
+                }
+            }
+
+            if (chasedOnThisStep.isEmpty()) return false
+            commonChasedTypes = if (commonChasedTypes == null) {
+                chasedOnThisStep
+            } else {
+                commonChasedTypes.intersect(chasedOnThisStep)
+            }
+            if (commonChasedTypes.isEmpty()) return false
+        }
+
+        return !commonChasedTypes.isNullOrEmpty()
+    }
+
+    private fun hasLegalDefender(board: BoardState, target: Square, defenderSide: Side): Boolean {
+        val testSquares = board.copyArray()
+        testSquares[target.index] = Piece(defenderSide.opposite(), PieceType.SOLDIER)
+        val probe = BoardState.create(
+            squares = testSquares,
+            sideToMove = defenderSide,
+            halfMoveClock = board.halfMoveClock,
+            fullMoveNumber = board.fullMoveNumber,
+            positionHash = ZobristHash.computeHash(testSquares, defenderSide)
+        )
+        for ((sq, _) in probe.allPieces(defenderSide)) {
+            if (sq == target) continue
+            if (isMoveLegal(probe, Move(sq, target))) return true
+        }
+        return false
     }
 
     private inline fun generatePseudoLegalMovesForPiece(

@@ -20,8 +20,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.thanhvan.cotuongluyenky.core.ui.accessibility.rememberEffectiveReduceMotion
 import com.thanhvan.cotuongluyenky.engine.api.EngineScore
 import com.thanhvan.cotuongluyenky.ui.theme.BgCardElevated
 import com.thanhvan.cotuongluyenky.ui.theme.BorderSubtle
@@ -40,17 +43,26 @@ import kotlin.math.tanh
 fun EvaluationBar(
     scoreRed: EngineScore?,
     isQuickEval: Boolean = false,
+    reduceMotion: Boolean = false,
     modifier: Modifier = Modifier
 ) {
+    val effectiveReduce = rememberEffectiveReduceMotion(reduceMotion)
     val targetRedRatio = scoreToRedShare(scoreRed)
     val animatedRedRatio by animateFloatAsState(
         targetValue = targetRedRatio,
         label = "eval_bar_ratio"
     )
+    val displayRatio = if (effectiveReduce) targetRedRatio else animatedRedRatio
     val formattedScore = formatRedScore(scoreRed)
     val labelSuffix = if (isQuickEval) " · Đánh giá nhanh" else ""
 
-    Column(modifier = modifier.fillMaxWidth()) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Thanh lợi thế góc nhìn Đỏ: $formattedScore"
+            }
+    ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -85,7 +97,7 @@ fun EvaluationBar(
         ) {
             Box(
                 modifier = Modifier
-                    .fillMaxWidth(animatedRedRatio.coerceIn(0.04f, 0.96f))
+                    .fillMaxWidth(displayRatio.coerceIn(0.04f, 0.96f))
                     .fillMaxHeight()
                     .background(PieceRedInk)
             )

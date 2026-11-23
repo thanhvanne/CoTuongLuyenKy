@@ -22,6 +22,8 @@ import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import com.thanhvan.cotuongluyenky.domain.analysis.MoveClassification
 import com.thanhvan.cotuongluyenky.domain.commentary.CommentaryService
@@ -65,6 +67,9 @@ fun AdvantageChart(
             .background(BgCard)
             .border(1.dp, BorderSubtle, RoundedCornerShape(14.dp))
             .padding(10.dp)
+            .semantics {
+                contentDescription = "Biểu đồ lợi thế gồm ${points.size} điểm, đang xem nước $selectedPlyNumber. Chạm vào biểu đồ để chuyển tới nước tương ứng."
+            }
     ) {
         Canvas(
             modifier = Modifier

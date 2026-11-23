@@ -55,7 +55,8 @@ sealed class EngineMoveOutcome {
  */
 class EngineManager(
     private val primaryEngine: XiangqiEngine?,
-    private val fallbackEngine: XiangqiEngine
+    private val fallbackEngine: XiangqiEngine,
+    private val effectiveResourceResolver: (EngineResourceMode) -> EngineResourceMode = { it }
 ) {
     private val mutex = Mutex()
     private val activeRequestId = AtomicLong(0L)
@@ -69,19 +70,38 @@ class EngineManager(
     @Volatile
     private var currentResourceMode: EngineResourceMode = EngineResourceMode.BALANCED
 
+    @Volatile
+    private var threadsOverride: Int = 0
+
+    @Volatile
+    private var hashMbOverride: Int = 0
+
     val activeEngineInfo: EngineInfo
         get() = activeEngine.info
 
+    fun updateAdvancedOverrides(threads: Int, hashMb: Int) {
+        val clampedThreads = threads.coerceIn(0, 4)
+        val clampedHash = hashMb.coerceIn(0, 128)
+        if (threadsOverride != clampedThreads || hashMbOverride != clampedHash) {
+            threadsOverride = clampedThreads
+            hashMbOverride = clampedHash
+            initialized = false
+        }
+    }
+
     suspend fun ensureInitialized(resourceMode: EngineResourceMode = currentResourceMode): EngineInfo {
+        val safeMode = effectiveResourceResolver(resourceMode)
         return mutex.withLock {
-            if (initialized && currentResourceMode == resourceMode) {
+            if (initialized && currentResourceMode == safeMode) {
                 return@withLock activeEngine.info
             }
-            currentResourceMode = resourceMode
+            currentResourceMode = safeMode
+            val effectiveThreads = if (threadsOverride > 0) threadsOverride else safeMode.threads
+            val effectiveHash = if (hashMbOverride > 0) hashMbOverride else safeMode.hashMb
             val config = EngineConfig(
-                threads = resourceMode.threads,
-                hashMb = resourceMode.hashMb,
-                resourceMode = resourceMode
+                threads = effectiveThreads,
+                hashMb = effectiveHash,
+                resourceMode = safeMode
             )
 
             if (primaryEngine != null) {

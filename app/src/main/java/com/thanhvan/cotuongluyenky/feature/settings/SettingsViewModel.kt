@@ -18,6 +18,8 @@ import com.thanhvan.cotuongluyenky.data.repository.GameRepository
 import com.thanhvan.cotuongluyenky.data.repository.PuzzleRepository
 import com.thanhvan.cotuongluyenky.engine.api.EngineInfo
 import com.thanhvan.cotuongluyenky.engine.manager.EngineManager
+import com.thanhvan.cotuongluyenky.service.power.DevicePowerSnapshot
+import com.thanhvan.cotuongluyenky.service.power.DeviceThermalPowerMonitor
 import com.thanhvan.cotuongluyenky.service.sound.GameSoundEffect
 import com.thanhvan.cotuongluyenky.service.sound.SoundEffectManager
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,7 +43,8 @@ class SettingsViewModel(
     private val puzzleRepository: PuzzleRepository,
     private val backupService: BackupExportImportService,
     private val engineManager: EngineManager,
-    private val soundEffectManager: SoundEffectManager
+    private val soundEffectManager: SoundEffectManager,
+    private val powerMonitor: DeviceThermalPowerMonitor
 ) : ViewModel() {
 
     val settings: StateFlow<UserSettings> = settingsStore.settingsFlow.stateIn(
@@ -55,6 +58,12 @@ class SettingsViewModel(
 
     val engineInfo: EngineInfo
         get() = engineManager.activeEngineInfo
+
+    val devicePowerSnapshot: DevicePowerSnapshot
+        get() = powerMonitor.inspect()
+
+    val maxSafeThreads: Int
+        get() = DeviceThermalPowerMonitor.maxSafeThreads()
 
     fun setPieceDisplayStyle(style: PieceDisplayStyle) = viewModelScope.launch {
         settingsStore.setPieceDisplayStyle(style)
@@ -119,6 +128,18 @@ class SettingsViewModel(
 
     fun setHintsEnabled(enabled: Boolean) = viewModelScope.launch {
         settingsStore.setHintsEnabled(enabled)
+    }
+
+    fun setAutoPowerThermalGuard(enabled: Boolean) = viewModelScope.launch {
+        settingsStore.setAutoPowerThermalGuard(enabled)
+    }
+
+    fun setAdvancedThreadsOverride(threads: Int) = viewModelScope.launch {
+        settingsStore.setAdvancedThreadsOverride(threads)
+    }
+
+    fun setAdvancedHashMbOverride(hashMb: Int) = viewModelScope.launch {
+        settingsStore.setAdvancedHashMbOverride(hashMb)
     }
 
     fun clearAnalysisCache() = viewModelScope.launch {
@@ -228,7 +249,8 @@ class SettingsViewModel(
         private val puzzleRepository: PuzzleRepository,
         private val backupService: BackupExportImportService,
         private val engineManager: EngineManager,
-        private val soundEffectManager: SoundEffectManager
+        private val soundEffectManager: SoundEffectManager,
+        private val powerMonitor: DeviceThermalPowerMonitor
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
@@ -239,7 +261,8 @@ class SettingsViewModel(
                 puzzleRepository = puzzleRepository,
                 backupService = backupService,
                 engineManager = engineManager,
-                soundEffectManager = soundEffectManager
+                soundEffectManager = soundEffectManager,
+                powerMonitor = powerMonitor
             ) as T
         }
     }
