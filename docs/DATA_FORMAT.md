@@ -39,7 +39,7 @@ Tài liệu hóa cấu trúc file JSON dùng cho chức năng **Xuất dữ li�
           "toSquare": "e2",
           "pieceType": "CANNON",
           "capturedPieceType": null,
-          "notationShort": "P2-5",
+          "notation": "P2-5",
           "notationFull": "Pháo 2 bình 5",
           "positionHashAfter": 123456789,
           "gaveCheck": false,

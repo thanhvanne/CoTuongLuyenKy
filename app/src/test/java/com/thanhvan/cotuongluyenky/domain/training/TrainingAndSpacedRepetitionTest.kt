@@ -167,7 +167,7 @@ class TrainingAndSpacedRepetitionTest {
             toSquare = "e2",
             pieceType = "CANNON",
             capturedPieceType = null,
-            notationShort = applied.notationShort,
+            notation = applied.notationShort,
             notationFull = applied.notationFull,
             positionHashAfter = applied.newBoard.positionHash,
             gaveCheck = false,
